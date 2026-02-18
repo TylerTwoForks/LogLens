@@ -1,0 +1,22 @@
+{
+  "name": "loglens",
+  "private": true,
+  "version": "0.1.0",
+  "packageManager": "pnpm@10.30.0",
+  "scripts": {
+    "dev": "docker compose up --build",
+    "lint": "pnpm run lint:js && cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings",
+    "lint:js": "pnpm --filter @loglens/api-client lint && pnpm --filter @loglens/web lint",
+    "test": "pnpm run test:js && cargo test --workspace",
+    "test:js": "pnpm --filter @loglens/api-client test",
+    "check": "pnpm run contract:check && pnpm run lint && pnpm run test",
+    "contract:generate": "node scripts/generate-contract.mjs && node scripts/generate-api-client.mjs",
+    "contract:check": "node scripts/check-openapi-sync.mjs && node scripts/check-api-client-sync.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "^24.3.0",
+    "openapi-typescript": "^7.10.1",
+    "typescript": "^5.9.2",
+    "vitest": "^3.2.4"
+  }
+}

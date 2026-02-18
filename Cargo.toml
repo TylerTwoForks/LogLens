@@ -1,0 +1,8 @@
+[workspace]
+members = [
+  "apps/api",
+  "crates/parser-core",
+  "crates/parser-metrics",
+  "crates/parser-sfdc-benchmarks"
+]
+resolver = "2"

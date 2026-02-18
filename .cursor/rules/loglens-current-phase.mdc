@@ -1,0 +1,25 @@
+---
+description: Current implementation phase pointer and execution guardrails
+alwaysApply: true
+---
+
+# LogLens Current Phase Control
+
+Use this file as the active execution pointer for development work.
+
+## Active Pointer
+
+- `current_phase`: `phase-3-ingest-parse-jobs` `<-- CURRENT`
+- `phase_rule_file`: `@.cursor/rules/loglens-phase-3-ingest-parse-jobs.mdc `
+- `phase_0_reference`: `docs/plans/phase-0-dev-environment-setup.mdc`
+
+## Agent Behavior
+
+- Prioritize tasks that align with the active phase rule file.
+- If a request jumps ahead, call it out and confirm scope before implementing.
+- Keep changes minimal, phase-aligned, and incrementally testable.
+- Do not add Redis or distributed workers before Phase 7 unless explicitly requested.
+
+## How To Advance
+
+When moving phases, update `current_phase` and `phase_rule_file` in this file first.

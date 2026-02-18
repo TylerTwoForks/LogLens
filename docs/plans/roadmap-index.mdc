@@ -1,0 +1,37 @@
+---
+doc_type: roadmap_index
+title: LogLens Implementation Roadmap
+owner: founder
+status: draft
+last_updated: 2026-02-18
+current_phase: phase-0-dev-environment-setup
+---
+
+# LogLens Roadmap Index
+
+This is the canonical planning index for humans. Agent-driving guidance lives in `.cursor/rules`.
+
+## Phase Sequence
+
+- `phase-0-dev-environment-setup` `<-- CURRENT`
+- `phase-1-monorepo-foundation`
+- `phase-2-auth-org-billing`
+- `phase-3-ingest-parse-jobs`
+- `phase-4-visualizations-log-viewer`
+- `phase-5-security-privacy-hardening`
+- `phase-6-beta-launch-ga-readiness`
+- `phase-7-optional-redis-scaleout`
+
+## Gates
+
+- Gate A: Any dev can run full stack locally in under 20 minutes.
+- Gate B: Org-scoped auth and licensing controls work end-to-end.
+- Gate C: Single and batch parsing works with no raw-log retention.
+- Gate D: Core visualizations and formatted log viewer are production-usable.
+- Gate E: Security and privacy controls are validated for beta.
+- Gate F: Reliability and product quality meet GA standards.
+
+## Notes
+
+- Use `current_phase` in frontmatter as the source of truth.
+- You can keep or remove the human marker tag (`<-- CURRENT`) as needed.

@@ -1,0 +1,27 @@
+---
+description: Phase 4 scope for chart experiences and formatted log viewer features
+alwaysApply: false
+---
+
+# Phase 4: Visualizations and Log Viewer
+
+## Objective
+
+Convert parse artifacts into useful visual analysis and readable log exploration.
+
+## In Scope
+
+- Core charts: timeline, hotspots, and governor-limit behavior.
+- Formatted log viewer with virtualization for large payloads.
+- Filters/search by level, class, transaction, and keywords.
+- UX states for pending, failed, and empty results.
+
+## Out of Scope
+
+- Advanced security certifications and distributed worker architecture.
+
+## Exit Criteria
+
+- Users can move from upload to insights quickly.
+- Viewer stays responsive for target log sizes.
+- Visuals are traceable to derived parse data.

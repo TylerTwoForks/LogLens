@@ -1,0 +1,49 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: loglens
+      POSTGRES_USER: loglens
+      POSTGRES_PASSWORD: loglens
+    ports:
+      - "5432:5432"
+    volumes:
+      - loglens_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U loglens -d loglens"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    environment:
+      DATABASE_URL: postgres://loglens:loglens@db:5432/loglens
+      APP_HOST: 0.0.0.0
+      APP_PORT: 8080
+      APP_VERSION: 0.1.0
+      CORS_ALLOWED_ORIGIN: http://localhost:3000
+      RUST_LOG: info
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    environment:
+      API_INTERNAL_URL: http://api:8080
+      NEXT_PUBLIC_API_BASE_URL: http://localhost:8080
+    depends_on:
+      api:
+        condition: service_started
+    ports:
+      - "3000:3000"
+
+volumes:
+  loglens_postgres_data:

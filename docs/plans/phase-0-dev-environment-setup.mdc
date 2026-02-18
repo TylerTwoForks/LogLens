@@ -1,0 +1,39 @@
+---
+doc_type: implementation_phase
+phase: 0
+slug: phase-0-dev-environment-setup
+title: Developer Environment Setup (Pre-Phase 1)
+owner: founder
+status: draft
+last_updated: 2026-02-18
+depends_on: []
+---
+
+# Phase 0: Developer Environment Setup
+
+## Objective
+
+Create a reliable local setup for web, API, and database development.
+
+## Scope
+
+- Install and pin local toolchain versions.
+- Bootstrap local PostgreSQL.
+- Provide environment templates for web and API.
+- Add one-command local run/lint/test flow.
+- Document onboarding steps.
+
+## Tasks
+
+- [ ] Pin Node LTS, pnpm, Rust stable, and Cargo tools.
+- [ ] Add local infra config for PostgreSQL.
+- [ ] Create `.env.example` for `apps/web` and `apps/api`.
+- [ ] Add root tasks: `dev`, `lint`, `test`, `check`.
+- [ ] Add CI smoke job for install + lint + tests.
+- [ ] Validate setup from a clean clone.
+
+## Exit Criteria
+
+- Fresh clone to full local run in <= 20 minutes.
+- At least one clean-room setup validation completed.
+- CI smoke checks pass on default branch.

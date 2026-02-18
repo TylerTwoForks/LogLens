@@ -1,0 +1,27 @@
+---
+description: Phase 5 scope for privacy controls, tenant safety, and operational hardening
+alwaysApply: false
+---
+
+# Phase 5: Security and Privacy Hardening
+
+## Objective
+
+Harden security, tenancy guarantees, and no-retention controls for beta customers.
+
+## In Scope
+
+- Threat modeling for ingest, parser, auth, and tenant boundaries.
+- Rate limits, payload validation, and abuse protections.
+- Audit logging that excludes sensitive raw-log content.
+- Observability, alerting, and incident runbook basics.
+
+## Out of Scope
+
+- New product modules unrelated to reliability/security readiness.
+
+## Exit Criteria
+
+- Tenant boundary and authz tests pass.
+- Privacy controls are validated and documented.
+- Operational diagnostics are sufficient for beta support.

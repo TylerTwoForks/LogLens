@@ -1,0 +1,58 @@
+---
+doc_type: product_vision
+title: LogLens Product Vision
+status: draft
+owner: Edmonds Group LLC
+last_updated: 2026-02-18
+---
+
+## Problem
+
+Salesforce debug logs are noisy and hard to interpret quickly. Teams lose time manually reading raw text to identify root causes, governor limit patterns, and performance issues.
+
+## Product Vision
+
+LogLens turns one or many Salesforce debug logs into actionable visual insights and searchable, formatted log views with strict no-retention handling of raw log content.
+
+## Target Users
+
+- Individual Salesforce developers and admins
+- Salesforce consulting teams and delivery orgs
+- Enterprise platform operations and support teams
+
+## Core Value Propositions
+
+- Upload 1..N logs and get parsed insights in minutes
+- Interactive graphs for timelines, hotspots, and limits behavior
+- Readable formatted log view with filters and search
+- Secure, org-separated SaaS model with role-based access
+- Optional strict zero-retention mode for sensitive environments
+
+## Product Principles
+
+- Privacy first: do not persist raw logs by default
+- Fast feedback: visible progress and quick parse turnaround
+- Explainability: every chart can be traced to parsed events
+- Multi-tenant safety: strict org-level data isolation
+- Incremental complexity: ship core value before advanced features
+
+## v1 Scope
+
+- Upload single or batch logs
+- Parse to normalized event model
+- Display core charts and formatted log text
+- Support individual and organization licensing
+- Org roles: owner/admin/member/viewer
+
+## Non-Goals (v1)
+
+- Long-term archival of raw logs
+- Full SIEM replacement
+- Custom plugin system for user-defined parsers
+
+## Success Metrics
+
+- Time-to-first-insight under 2 minutes for typical logs
+- 95th percentile parse completion under target size limits
+- Zero confirmed incidents of cross-org data access
+- High activation: upload -> chart view conversion above target

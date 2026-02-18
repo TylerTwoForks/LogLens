@@ -1,0 +1,8 @@
+.git
+.cursor
+node_modules
+target
+**/node_modules
+**/.next
+docs
+agent-transcripts
