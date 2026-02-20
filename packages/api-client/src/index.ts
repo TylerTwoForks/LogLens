@@ -31,6 +31,7 @@ export type ParseJobResponse = {
   created_at: string;
   started_at: string | null;
   finished_at: string | null;
+  expires_at: string;
 };
 
 export type UploadResponse = {
@@ -74,7 +75,7 @@ export type LogEvent = {
   event_type: string;
   line_number: number | null;
   log_level: string | null;
-  message: string;
+  class_name: string | null;
 };
 
 export type ListEventsResponse = {
@@ -88,6 +89,25 @@ export type ListEventsParams = {
   event_type?: string;
   log_level?: string;
   search?: string;
+  class_name?: string;
+};
+
+export type EventTypeBucket = {
+  event_type: string;
+  count: number;
+};
+
+export type TimelineBucket = {
+  nanos_start: number;
+  nanos_end: number;
+  count: number;
+};
+
+export type EventSummaryResponse = {
+  event_type_counts: EventTypeBucket[];
+  timeline: TimelineBucket[];
+  total_events: number;
+  class_names: string[];
 };
 
 export type AuthContext = {
@@ -325,8 +345,23 @@ export function listJobEvents(
   if (params.event_type) searchParams.set("event_type", params.event_type);
   if (params.log_level) searchParams.set("log_level", params.log_level);
   if (params.search) searchParams.set("search", params.search);
+  if (params.class_name) searchParams.set("class_name", params.class_name);
 
   const qs = searchParams.toString();
   const path = `/v1/orgs/${orgId}/jobs/${jobId}/events${qs ? `?${qs}` : ""}`;
   return requestJson<ListEventsResponse>(buildUrl(baseUrl, path), { auth });
+}
+
+export function getEventSummary(
+  auth: AuthContext,
+  orgId: number,
+  jobId: number,
+  buckets?: number,
+  baseUrl = defaultBaseUrl,
+): Promise<EventSummaryResponse> {
+  const searchParams = new URLSearchParams();
+  if (buckets !== undefined) searchParams.set("buckets", String(buckets));
+  const qs = searchParams.toString();
+  const path = `/v1/orgs/${orgId}/jobs/${jobId}/event-summary${qs ? `?${qs}` : ""}`;
+  return requestJson<EventSummaryResponse>(buildUrl(baseUrl, path), { auth });
 }

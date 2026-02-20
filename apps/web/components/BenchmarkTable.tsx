@@ -2,15 +2,33 @@
 
 import { useState } from "react";
 import type { BenchmarkSnapshot } from "@loglens/api-client";
+import { Input } from "@/components/ui/input";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { cn } from "@/lib/utils";
 
 type SortKey = keyof BenchmarkSnapshot;
 type SortDir = "asc" | "desc";
 
-const COLUMNS: { key: SortKey; label: string; format?: (v: number) => string }[] = [
+const COLUMNS: {
+  key: SortKey;
+  label: string;
+  format?: (v: number) => string;
+}[] = [
   { key: "sequence", label: "#" },
   { key: "label", label: "Label" },
   { key: "query_rows", label: "Query Rows" },
-  { key: "heap_size_pct", label: "Heap Size (%)", format: (v) => v.toFixed(1) },
+  {
+    key: "heap_size_pct",
+    label: "Heap Size (%)",
+    format: (v) => v.toFixed(1),
+  },
   { key: "cpu_time_ms", label: "CPU Time (ms)" },
   { key: "dml_statements", label: "DML Statements" },
   { key: "soql_queries", label: "SOQL Queries" },
@@ -26,12 +44,16 @@ export default function BenchmarkTable({ benchmarks }: Props) {
   const [filter, setFilter] = useState("");
 
   if (benchmarks.length === 0) {
-    return <p style={{ color: "#888" }}>No benchmark data to display.</p>;
+    return (
+      <p className="text-sm text-muted-foreground">
+        No benchmark data to display.
+      </p>
+    );
   }
 
   const filtered = filter
     ? benchmarks.filter((b) =>
-        b.label.toLowerCase().includes(filter.toLowerCase()),
+        b.label.toLowerCase().includes(filter.toLowerCase())
       )
     : benchmarks;
 
@@ -59,54 +81,36 @@ export default function BenchmarkTable({ benchmarks }: Props) {
 
   return (
     <div>
-      <input
+      <Input
         type="text"
         placeholder="Filter by label..."
         value={filter}
         onChange={(e) => setFilter(e.target.value)}
-        style={{
-          marginBottom: "0.75rem",
-          padding: "0.4rem 0.6rem",
-          fontSize: "0.875rem",
-          border: "1px solid #555",
-          borderRadius: "4px",
-          background: "inherit",
-          color: "inherit",
-          width: "260px",
-        }}
+        className="mb-3 max-w-[260px]"
       />
-      <div style={{ overflowX: "auto" }}>
-        <table
-          style={{
-            width: "100%",
-            borderCollapse: "collapse",
-            fontSize: "0.8125rem",
-          }}
-        >
-          <thead>
-            <tr>
+      <div className="overflow-x-auto rounded-md border border-border">
+        <Table>
+          <TableHeader>
+            <TableRow>
               {COLUMNS.map((col) => (
-                <th
+                <TableHead
                   key={col.key}
                   onClick={() => handleSort(col.key)}
-                  style={{
-                    cursor: "pointer",
-                    textAlign: "left",
-                    padding: "0.5rem 0.75rem",
-                    borderBottom: "2px solid #444",
-                    whiteSpace: "nowrap",
-                    userSelect: "none",
-                  }}
+                  className="cursor-pointer select-none whitespace-nowrap"
                 >
                   {col.label}
-                  {sortKey === col.key ? (sortDir === "asc" ? " \u25B2" : " \u25BC") : ""}
-                </th>
+                  {sortKey === col.key
+                    ? sortDir === "asc"
+                      ? " ▲"
+                      : " ▼"
+                    : ""}
+                </TableHead>
               ))}
-            </tr>
-          </thead>
-          <tbody>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
             {sorted.map((row) => (
-              <tr key={`${row.sequence}-${row.label}`}>
+              <TableRow key={`${row.sequence}-${row.label}`}>
                 {COLUMNS.map((col) => {
                   const raw = row[col.key];
                   const display =
@@ -114,24 +118,24 @@ export default function BenchmarkTable({ benchmarks }: Props) {
                       ? col.format(raw)
                       : String(raw);
                   return (
-                    <td
+                    <TableCell
                       key={col.key}
-                      style={{
-                        padding: "0.4rem 0.75rem",
-                        borderBottom: "1px solid #333",
-                        whiteSpace: col.key === "label" ? "normal" : "nowrap",
-                      }}
+                      className={cn(
+                        col.key === "label"
+                          ? "whitespace-normal"
+                          : "whitespace-nowrap"
+                      )}
                     >
                       {display}
-                    </td>
+                    </TableCell>
                   );
                 })}
-              </tr>
+              </TableRow>
             ))}
-          </tbody>
-        </table>
+          </TableBody>
+        </Table>
       </div>
-      <p style={{ fontSize: "0.75rem", color: "#888", margin: "0.5rem 0 0" }}>
+      <p className="mt-2 text-xs text-muted-foreground">
         {sorted.length} of {benchmarks.length} rows
       </p>
     </div>

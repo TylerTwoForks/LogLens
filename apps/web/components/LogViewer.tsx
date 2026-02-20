@@ -1,28 +1,39 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import type { LogEvent } from "@loglens/api-client";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { cn } from "@/lib/utils";
+
+export type DisplayEvent = LogEvent & { message?: string };
 
 type Props = {
-  initialEvents: LogEvent[];
+  initialEvents: DisplayEvent[];
   totalEvents: number;
+  fileName?: string;
+  classNames?: string[];
   onLoadMore: (params: {
     offset: number;
     limit: number;
     event_type?: string;
     log_level?: string;
     search?: string;
-  }) => Promise<{ events: LogEvent[]; total: number }>;
+    class_name?: string;
+  }) => Promise<{ events: DisplayEvent[]; total: number }>;
+  onReupload?: (file: File) => void;
+  hasMessages?: boolean;
 };
 
 const LOG_LEVEL_COLORS: Record<string, string> = {
-  ERROR: "#ef4444",
-  WARN: "#f59e0b",
-  INFO: "#3b82f6",
-  DEBUG: "#a3a3a3",
-  FINE: "#6b7280",
-  FINER: "#6b7280",
-  FINEST: "#6b7280",
+  ERROR: "text-destructive",
+  WARN: "text-chart-1",
+  INFO: "text-info",
+  DEBUG: "text-muted-foreground",
+  FINE: "text-muted-foreground/70",
+  FINER: "text-muted-foreground/70",
+  FINEST: "text-muted-foreground/70",
 };
 
 const EVENT_TYPE_OPTIONS = [
@@ -55,72 +66,122 @@ const PAGE_SIZE = 200;
 const ROW_HEIGHT = 24;
 const SEARCH_DEBOUNCE_MS = 400;
 
+const selectClasses =
+  "h-8 rounded-md border border-input bg-background px-2 text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-ring";
+
 export default function LogViewer({
   initialEvents,
   totalEvents,
+  fileName,
+  classNames = [],
   onLoadMore,
+  onReupload,
+  hasMessages = false,
 }: Props) {
-  const [events, setEvents] = useState(initialEvents);
+  const [events, setEvents] = useState<DisplayEvent[]>(initialEvents);
   const [total, setTotal] = useState(totalEvents);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [wrap, setWrap] = useState(false);
 
   const [eventTypeFilter, setEventTypeFilter] = useState("");
   const [logLevelFilter, setLogLevelFilter] = useState("");
+  const [classNameFilter, setClassNameFilter] = useState("");
   const [searchText, setSearchText] = useState("");
 
   const containerRef = useRef<HTMLDivElement>(null);
-  const [scrollTop, setScrollTop] = useState(0);
-  const [containerHeight, setContainerHeight] = useState(600);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const latestFiltersRef = useRef({ eventType: "", logLevel: "", search: "" });
+  const latestFiltersRef = useRef({
+    eventType: "",
+    logLevel: "",
+    className: "",
+    search: "",
+  });
+  const loadingRef = useRef(false);
 
   useEffect(() => {
-    if (containerRef.current) {
-      setContainerHeight(containerRef.current.clientHeight);
-    }
+    setEvents(initialEvents);
+    setTotal(totalEvents);
+  }, [initialEvents, totalEvents]);
+
+  useEffect(() => {
+    return () => {
+      if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+    };
   }, []);
 
+  const virtualizer = useVirtualizer({
+    count: events.length,
+    getScrollElement: () => containerRef.current,
+    estimateSize: () => ROW_HEIGHT,
+    overscan: 20,
+  });
+
   const fetchFiltered = useCallback(
-    async (eventType: string, logLevel: string, search: string) => {
+    async (
+      eventType: string,
+      logLevel: string,
+      className: string,
+      search: string
+    ) => {
       setLoading(true);
+      setError(null);
+      loadingRef.current = true;
       try {
         const result = await onLoadMore({
           offset: 0,
           limit: PAGE_SIZE,
           event_type: eventType || undefined,
           log_level: logLevel || undefined,
+          class_name: className || undefined,
           search: search || undefined,
         });
         setEvents(result.events);
         setTotal(result.total);
-        setScrollTop(0);
         if (containerRef.current) {
           containerRef.current.scrollTop = 0;
         }
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Failed to load events");
       } finally {
         setLoading(false);
+        loadingRef.current = false;
       }
     },
-    [onLoadMore],
+    [onLoadMore]
   );
+
+  const applyFilters = useCallback(() => {
+    const f = latestFiltersRef.current;
+    fetchFiltered(f.eventType, f.logLevel, f.className, f.search);
+  }, [fetchFiltered]);
 
   const handleEventTypeChange = useCallback(
     (value: string) => {
       setEventTypeFilter(value);
       latestFiltersRef.current.eventType = value;
-      fetchFiltered(value, latestFiltersRef.current.logLevel, latestFiltersRef.current.search);
+      applyFilters();
     },
-    [fetchFiltered],
+    [applyFilters]
   );
 
   const handleLogLevelChange = useCallback(
     (value: string) => {
       setLogLevelFilter(value);
       latestFiltersRef.current.logLevel = value;
-      fetchFiltered(latestFiltersRef.current.eventType, value, latestFiltersRef.current.search);
+      applyFilters();
     },
-    [fetchFiltered],
+    [applyFilters]
+  );
+
+  const handleClassNameChange = useCallback(
+    (value: string) => {
+      setClassNameFilter(value);
+      latestFiltersRef.current.className = value;
+      applyFilters();
+    },
+    [applyFilters]
   );
 
   const handleSearchChange = useCallback(
@@ -129,88 +190,76 @@ export default function LogViewer({
       latestFiltersRef.current.search = value;
       if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
       searchTimerRef.current = setTimeout(() => {
-        fetchFiltered(
-          latestFiltersRef.current.eventType,
-          latestFiltersRef.current.logLevel,
-          value,
-        );
+        applyFilters();
       }, SEARCH_DEBOUNCE_MS);
     },
-    [fetchFiltered],
+    [applyFilters]
   );
 
-  useEffect(() => {
-    return () => {
-      if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
-    };
-  }, []);
-
   const loadMoreEvents = useCallback(async () => {
-    if (loading || events.length >= total) return;
+    if (loadingRef.current || events.length >= total) return;
     setLoading(true);
+    loadingRef.current = true;
     try {
       const result = await onLoadMore({
         offset: events.length,
         limit: PAGE_SIZE,
         event_type: eventTypeFilter || undefined,
         log_level: logLevelFilter || undefined,
+        class_name: classNameFilter || undefined,
         search: searchText || undefined,
       });
       setEvents((prev) => [...prev, ...result.events]);
       setTotal(result.total);
+    } catch (e) {
+      setError(
+        e instanceof Error ? e.message : "Failed to load more events"
+      );
     } finally {
       setLoading(false);
+      loadingRef.current = false;
     }
-  }, [loading, events.length, total, eventTypeFilter, logLevelFilter, searchText, onLoadMore]);
+  }, [
+    events.length,
+    total,
+    eventTypeFilter,
+    logLevelFilter,
+    classNameFilter,
+    searchText,
+    onLoadMore,
+  ]);
 
   const handleScroll = useCallback(() => {
     if (!containerRef.current) return;
     const el = containerRef.current;
-    setScrollTop(el.scrollTop);
-
-    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 400;
+    const nearBottom =
+      el.scrollHeight - el.scrollTop - el.clientHeight < 400;
     if (nearBottom) {
       loadMoreEvents();
     }
   }, [loadMoreEvents]);
 
-  const startIdx = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - 5);
-  const visibleCount = Math.ceil(containerHeight / ROW_HEIGHT) + 10;
-  const endIdx = Math.min(events.length, startIdx + visibleCount);
-  const visibleEvents = wrap ? events : events.slice(startIdx, endIdx);
+  const handleFileSelect = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (file && onReupload) {
+        onReupload(file);
+      }
+      e.target.value = "";
+    },
+    [onReupload]
+  );
 
-  const renderRow = (evt: LogEvent, globalIdx: number) => {
-    const levelColor = LOG_LEVEL_COLORS[evt.log_level ?? ""] ?? "#a3a3a3";
-
-    const positionStyle: React.CSSProperties = wrap
-      ? { borderBottom: "1px solid #222", display: "flex", padding: "2px 0.5rem", minHeight: ROW_HEIGHT }
-      : {
-          position: "absolute",
-          top: globalIdx * ROW_HEIGHT,
-          left: 0,
-          height: ROW_HEIGHT,
-          display: "flex",
-          padding: "0 0.5rem",
-          borderBottom: "1px solid #222",
-        };
+  const renderRow = (evt: DisplayEvent) => {
+    const levelClass = LOG_LEVEL_COLORS[evt.log_level ?? ""] ?? "text-muted-foreground";
 
     return (
-      <div
-        key={evt.line_index}
-        style={{
-          ...positionStyle,
-          whiteSpace: wrap ? "pre-wrap" : "nowrap",
-          wordBreak: wrap ? "break-all" : undefined,
-          alignItems: "flex-start",
-        }}
-      >
+      <>
         <span
+          className="shrink-0 text-right text-muted-foreground/50"
           style={{
-            width: "50px",
-            minWidth: "50px",
-            flexShrink: 0,
-            color: "#555",
-            textAlign: "right",
+            width: 50,
+            minWidth: 50,
             marginRight: "0.75rem",
             lineHeight: `${ROW_HEIGHT}px`,
           }}
@@ -218,11 +267,10 @@ export default function LogViewer({
           {evt.line_index}
         </span>
         <span
+          className="shrink-0 text-muted-foreground"
           style={{
-            width: "90px",
-            minWidth: "90px",
-            flexShrink: 0,
-            color: "#6b7280",
+            width: 90,
+            minWidth: 90,
             marginRight: "0.5rem",
             lineHeight: `${ROW_HEIGHT}px`,
           }}
@@ -230,54 +278,111 @@ export default function LogViewer({
           {evt.timestamp}
         </span>
         <span
+          className="shrink-0 text-accent"
           style={{
-            width: "160px",
-            minWidth: "160px",
-            flexShrink: 0,
-            color: "#a78bfa",
+            width: 160,
+            minWidth: 160,
             marginRight: "0.5rem",
             lineHeight: `${ROW_HEIGHT}px`,
           }}
         >
           {evt.event_type}
         </span>
-        {evt.log_level && (
+        <span
+          className={cn(
+            "shrink-0 overflow-hidden",
+            evt.log_level ? levelClass : "text-transparent",
+            evt.log_level === "ERROR" && "font-bold"
+          )}
+          style={{
+            width: 60,
+            minWidth: 60,
+            marginRight: "0.5rem",
+            lineHeight: `${ROW_HEIGHT}px`,
+          }}
+        >
+          {evt.log_level ?? ""}
+        </span>
+        {hasMessages && (
           <span
-            style={{
-              width: "50px",
-              minWidth: "50px",
-              flexShrink: 0,
-              color: levelColor,
-              fontWeight: evt.log_level === "ERROR" ? 700 : 400,
-              marginRight: "0.5rem",
-              lineHeight: `${ROW_HEIGHT}px`,
-            }}
+            className="text-foreground"
+            style={{ lineHeight: `${ROW_HEIGHT}px` }}
           >
-            {evt.log_level}
+            {evt.message ?? ""}
           </span>
         )}
-        <span style={{ color: "#d4d4d4", lineHeight: `${ROW_HEIGHT}px` }}>
-          {evt.message}
-        </span>
-      </div>
+      </>
     );
   };
 
+  const virtualItems = virtualizer.getVirtualItems();
+
   return (
     <div>
-      <div
-        style={{
-          display: "flex",
-          gap: "0.5rem",
-          flexWrap: "wrap",
-          marginBottom: "0.75rem",
-          alignItems: "center",
-        }}
-      >
+      {/* Privacy re-upload banner */}
+      {!hasMessages && (
+        <div className="mb-3 flex flex-wrap items-center gap-3 rounded-md border border-border bg-muted px-4 py-3">
+          <span className="flex-1 text-sm text-muted-foreground">
+            Log messages are not stored for privacy.
+            {fileName
+              ? ` Re-upload "${fileName}" to view full message content.`
+              : " Re-upload the same log file to view full message content."}
+          </span>
+          {onReupload && (
+            <>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".log,.txt"
+                onChange={handleFileSelect}
+                className="hidden"
+              />
+              <Button
+                size="sm"
+                onClick={() => fileInputRef.current?.click()}
+              >
+                Re-upload log
+              </Button>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* Active re-upload banner */}
+      {hasMessages && (
+        <div className="mb-3 flex flex-wrap items-center gap-3 rounded-md border border-success bg-success/10 px-4 py-3">
+          <span className="flex-1 text-sm text-success">
+            Viewing log messages from re-uploaded file (in-memory only, not
+            stored).
+          </span>
+          {onReupload && (
+            <>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".log,.txt"
+                onChange={handleFileSelect}
+                className="hidden"
+              />
+              <Button
+                variant="outline"
+                size="sm"
+                className="border-success text-success hover:bg-success/10"
+                onClick={() => fileInputRef.current?.click()}
+              >
+                Upload different file
+              </Button>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* Filters toolbar */}
+      <div className="mb-3 flex flex-wrap items-center gap-2">
         <select
           value={eventTypeFilter}
           onChange={(e) => handleEventTypeChange(e.target.value)}
-          style={{ fontSize: "0.8125rem", padding: "0.3rem" }}
+          className={selectClasses}
         >
           <option value="">All Event Types</option>
           {EVENT_TYPE_OPTIONS.filter(Boolean).map((et) => (
@@ -290,7 +395,7 @@ export default function LogViewer({
         <select
           value={logLevelFilter}
           onChange={(e) => handleLogLevelChange(e.target.value)}
-          style={{ fontSize: "0.8125rem", padding: "0.3rem" }}
+          className={selectClasses}
         >
           <option value="">All Levels</option>
           {LOG_LEVEL_OPTIONS.filter(Boolean).map((ll) => (
@@ -300,78 +405,126 @@ export default function LogViewer({
           ))}
         </select>
 
-        <input
+        {classNames.length > 0 && (
+          <select
+            value={classNameFilter}
+            onChange={(e) => handleClassNameChange(e.target.value)}
+            className={selectClasses}
+          >
+            <option value="">All Classes</option>
+            {classNames.map((c) => (
+              <option key={c} value={c}>
+                {c}
+              </option>
+            ))}
+          </select>
+        )}
+
+        <Input
           type="text"
-          placeholder="Search messages..."
+          placeholder={
+            hasMessages ? "Search messages..." : "Search event types..."
+          }
           value={searchText}
           onChange={(e) => handleSearchChange(e.target.value)}
-          style={{
-            fontSize: "0.8125rem",
-            padding: "0.3rem 0.5rem",
-            width: "200px",
-            border: "1px solid #555",
-            borderRadius: "4px",
-            background: "inherit",
-            color: "inherit",
-          }}
+          className="h-8 w-[200px] text-xs"
         />
 
-        <label
-          style={{
-            display: "inline-flex",
-            alignItems: "center",
-            gap: "0.35rem",
-            fontSize: "0.8125rem",
-            color: "#ccc",
-            cursor: "pointer",
-            userSelect: "none",
-          }}
-        >
+        <label className="inline-flex cursor-pointer select-none items-center gap-1.5 text-xs text-muted-foreground">
           <input
             type="checkbox"
             checked={wrap}
             onChange={(e) => setWrap(e.target.checked)}
-            style={{ accentColor: "#6366f1" }}
+            className="accent-primary"
           />
           Wrap lines
         </label>
 
         {loading && (
-          <span style={{ fontSize: "0.75rem", color: "#f59e0b" }}>Loading...</span>
+          <span className="text-xs text-chart-1">Loading...</span>
+        )}
+        {error && (
+          <span className="text-xs text-destructive">{error}</span>
         )}
 
-        <span style={{ fontSize: "0.75rem", color: "#888", marginLeft: "auto" }}>
+        <span className="ml-auto text-xs text-muted-foreground">
           {events.length} of {total} events loaded
         </span>
       </div>
 
+      {/* Virtualized event list */}
       <div
         ref={containerRef}
         onScroll={handleScroll}
-        style={{
-          height: "600px",
-          overflow: "auto",
-          border: "1px solid #333",
-          borderRadius: "4px",
-          fontFamily: "'JetBrains Mono', 'Fira Code', 'Consolas', monospace",
-          fontSize: "0.75rem",
-          lineHeight: `${ROW_HEIGHT}px`,
-          background: "#111",
-        }}
+        className="h-[600px] overflow-auto rounded border border-border bg-card font-mono text-xs"
+        style={{ lineHeight: `${ROW_HEIGHT}px` }}
       >
-        {wrap ? (
-          <div>{visibleEvents.map((evt, i) => renderRow(evt, i))}</div>
-        ) : (
-          <div
-            style={{
-              height: events.length * ROW_HEIGHT,
-              position: "relative",
-              minWidth: "fit-content",
-            }}
+        {/* Sticky header */}
+        <div
+          className="sticky top-0 z-10 flex whitespace-nowrap border-b-2 border-border bg-muted px-2 font-semibold text-muted-foreground"
+          style={{ height: ROW_HEIGHT, minWidth: "fit-content" }}
+        >
+          <span
+            className="shrink-0 text-right"
+            style={{ width: 50, minWidth: 50, marginRight: "0.75rem" }}
           >
-            {visibleEvents.map((evt, i) => renderRow(evt, startIdx + i))}
-          </div>
-        )}
+            Line
+          </span>
+          <span
+            className="shrink-0"
+            style={{ width: 90, minWidth: 90, marginRight: "0.5rem" }}
+          >
+            Time
+          </span>
+          <span
+            className="shrink-0"
+            style={{ width: 160, minWidth: 160, marginRight: "0.5rem" }}
+          >
+            Event Type
+          </span>
+          <span
+            className="shrink-0"
+            style={{ width: 60, minWidth: 60, marginRight: "0.5rem" }}
+          >
+            Level
+          </span>
+          {hasMessages && <span>Message</span>}
+        </div>
+
+        {/* Virtualized rows */}
+        <div
+          style={{
+            height: virtualizer.getTotalSize(),
+            width: "100%",
+            position: "relative",
+            minWidth: "fit-content",
+          }}
+        >
+          {virtualItems.map((virtualRow) => {
+            const evt = events[virtualRow.index];
+            if (!evt) return null;
+            return (
+              <div
+                key={virtualRow.key}
+                className={cn(
+                  "flex border-b border-border px-2",
+                  wrap ? "whitespace-pre-wrap break-all" : "whitespace-nowrap"
+                )}
+                style={{
+                  position: "absolute",
+                  top: 0,
+                  left: 0,
+                  width: "100%",
+                  height: `${virtualRow.size}px`,
+                  transform: `translateY(${virtualRow.start}px)`,
+                  alignItems: "flex-start",
+                }}
+              >
+                {renderRow(evt)}
+              </div>
+            );
+          })}
+        </div>
       </div>
     </div>
   );

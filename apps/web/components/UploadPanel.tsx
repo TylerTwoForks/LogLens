@@ -2,6 +2,23 @@
 
 import { useState, useCallback, useRef, useEffect } from "react";
 import type { ParseJobResponse, AuthContext } from "@loglens/api-client";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { cn } from "@/lib/utils";
+import Link from "next/link";
 
 type Props = {
   orgId: number;
@@ -10,32 +27,22 @@ type Props = {
   apiBaseUrl: string;
 };
 
-function statusBadge(status: string) {
-  const colors: Record<string, { bg: string; fg: string }> = {
-    queued: { bg: "#3b3b00", fg: "#facc15" },
-    running: { bg: "#002a3b", fg: "#38bdf8" },
-    done: { bg: "#003b1a", fg: "#4ade80" },
-    failed: { bg: "#3b0000", fg: "#f87171" },
-  };
-  const c = colors[status] ?? { bg: "#333", fg: "#aaa" };
-  return (
-    <span
-      style={{
-        display: "inline-block",
-        padding: "0.125rem 0.5rem",
-        borderRadius: "9999px",
-        fontSize: "0.75rem",
-        fontWeight: 600,
-        backgroundColor: c.bg,
-        color: c.fg,
-      }}
-    >
-      {status}
-    </span>
-  );
-}
+const STATUS_BADGE: Record<
+  string,
+  { variant: "default" | "secondary" | "outline" | "destructive"; className?: string }
+> = {
+  queued: { variant: "secondary" },
+  running: { variant: "outline", className: "border-info text-info" },
+  done: { variant: "outline", className: "border-success text-success" },
+  failed: { variant: "destructive" },
+};
 
-export default function UploadPanel({ orgId, auth, initialJobs, apiBaseUrl }: Props) {
+export default function UploadPanel({
+  orgId,
+  auth,
+  initialJobs,
+  apiBaseUrl,
+}: Props) {
   const [jobs, setJobs] = useState<ParseJobResponse[]>(initialJobs);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -63,7 +70,9 @@ export default function UploadPanel({ orgId, auth, initialJobs, apiBaseUrl }: Pr
     }
   }, [apiBaseUrl, orgId, auth.authSubject, auth.email]);
 
-  const hasActiveJobs = jobs.some((j) => j.status === "queued" || j.status === "running");
+  const hasActiveJobs = jobs.some(
+    (j) => j.status === "queued" || j.status === "running"
+  );
 
   useEffect(() => {
     if (hasActiveJobs) {
@@ -132,129 +141,125 @@ export default function UploadPanel({ orgId, auth, initialJobs, apiBaseUrl }: Pr
   };
 
   return (
-    <section style={{ marginTop: "1.5rem" }}>
-      <h3 style={{ marginBottom: "0.75rem" }}>Log Upload</h3>
+    <div className="mt-6 space-y-4">
+      <h3 className="text-lg font-semibold text-foreground">Log Upload</h3>
 
-      <div
+      <Card
+        className={cn(
+          "cursor-pointer border-2 border-dashed transition-colors",
+          dragOver
+            ? "border-primary bg-primary/5"
+            : "border-border bg-card hover:border-muted-foreground",
+          uploading && "cursor-wait opacity-70"
+        )}
         onDragOver={(e) => {
           e.preventDefault();
           setDragOver(true);
         }}
         onDragLeave={() => setDragOver(false)}
         onDrop={onDrop}
-        style={{
-          border: `2px dashed ${dragOver ? "#6366f1" : "#444"}`,
-          borderRadius: "8px",
-          padding: "1.5rem",
-          textAlign: "center",
-          backgroundColor: dragOver ? "#1e1b4b" : "#111",
-          transition: "border-color 150ms, background-color 150ms",
-          cursor: uploading ? "wait" : "pointer",
-        }}
         onClick={() => !uploading && fileInputRef.current?.click()}
       >
-        <input
-          ref={fileInputRef}
-          type="file"
-          multiple
-          accept=".log,.txt"
-          onChange={onFileChange}
-          style={{ display: "none" }}
-        />
-        {uploading ? (
-          <p style={{ color: "#888", margin: 0 }}>Uploading...</p>
-        ) : (
-          <p style={{ color: "#888", margin: 0 }}>
-            Drop Salesforce debug log files here, or click to browse.
-            <br />
-            <span style={{ fontSize: "0.75rem" }}>Accepts .log and .txt files</span>
-          </p>
-        )}
-      </div>
+        <CardContent className="py-8 text-center">
+          <input
+            ref={fileInputRef}
+            type="file"
+            multiple
+            accept=".log,.txt"
+            onChange={onFileChange}
+            className="hidden"
+          />
+          {uploading ? (
+            <p className="text-sm text-muted-foreground">Uploading...</p>
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              Drop Salesforce debug log files here, or click to browse.
+              <br />
+              <span className="text-xs">Accepts .log and .txt files</span>
+            </p>
+          )}
+        </CardContent>
+      </Card>
 
       {error && (
-        <p style={{ color: "#ef4444", fontSize: "0.875rem", marginTop: "0.5rem" }}>{error}</p>
+        <p className="text-sm text-destructive">{error}</p>
       )}
 
       {jobs.length > 0 && (
-        <div style={{ marginTop: "1rem" }}>
-          <h4 style={{ marginBottom: "0.5rem" }}>Parse Jobs</h4>
-          <table
-            style={{
-              width: "100%",
-              borderCollapse: "collapse",
-              fontSize: "0.875rem",
-            }}
-          >
-            <thead>
-              <tr
-                style={{
-                  borderBottom: "1px solid #333",
-                  textAlign: "left",
-                }}
-              >
-                <th style={{ padding: "0.375rem 0.5rem" }}>ID</th>
-                <th style={{ padding: "0.375rem 0.5rem" }}>File</th>
-                <th style={{ padding: "0.375rem 0.5rem" }}>Status</th>
-                <th style={{ padding: "0.375rem 0.5rem" }}>Lines</th>
-                <th style={{ padding: "0.375rem 0.5rem" }}>Benchmarks</th>
-                <th style={{ padding: "0.375rem 0.5rem" }}>Created</th>
-                <th style={{ padding: "0.375rem 0.5rem" }}></th>
-              </tr>
-            </thead>
-            <tbody>
-              {jobs.map((job) => (
-                <tr key={job.job_id} style={{ borderBottom: "1px solid #222" }}>
-                  <td style={{ padding: "0.375rem 0.5rem" }}>{job.job_id}</td>
-                  <td
-                    style={{
-                      padding: "0.375rem 0.5rem",
-                      maxWidth: "200px",
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
-                      whiteSpace: "nowrap",
-                    }}
-                  >
-                    {job.file_name}
-                  </td>
-                  <td style={{ padding: "0.375rem 0.5rem" }}>
-                    {statusBadge(job.status)}
-                  </td>
-                  <td style={{ padding: "0.375rem 0.5rem" }}>
-                    {job.status === "done"
-                      ? `${job.parsed_lines.toLocaleString()} / ${job.total_lines.toLocaleString()}`
-                      : "-"}
-                  </td>
-                  <td style={{ padding: "0.375rem 0.5rem" }}>
-                    {job.status === "done" ? job.benchmark_count : "-"}
-                  </td>
-                  <td style={{ padding: "0.375rem 0.5rem", color: "#888" }}>
-                    {new Date(job.created_at).toLocaleString()}
-                  </td>
-                  <td style={{ padding: "0.375rem 0.5rem" }}>
-                    {job.status === "done" && (
-                      <a
-                        href={`/jobs/${job.job_id}?org=${orgId}`}
-                        style={{ color: "#6366f1", textDecoration: "none" }}
-                      >
-                        View
-                      </a>
-                    )}
-                    {job.status === "failed" && job.error_message && (
-                      <span
-                        title={job.error_message}
-                        style={{ color: "#f87171", cursor: "help" }}
-                      >
-                        Error
-                      </span>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div>
+          <h4 className="mb-2 text-sm font-semibold text-foreground">
+            Parse Jobs
+          </h4>
+          <div className="overflow-x-auto rounded-md border border-border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>ID</TableHead>
+                  <TableHead>File</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Lines</TableHead>
+                  <TableHead>Benchmarks</TableHead>
+                  <TableHead>Created</TableHead>
+                  <TableHead />
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {jobs.map((job) => {
+                  const badge = STATUS_BADGE[job.status] ?? STATUS_BADGE.queued;
+                  return (
+                    <TableRow key={job.job_id}>
+                      <TableCell>{job.job_id}</TableCell>
+                      <TableCell className="max-w-[200px] truncate">
+                        {job.file_name}
+                      </TableCell>
+                      <TableCell>
+                        <Badge
+                          variant={badge.variant}
+                          className={badge.className}
+                        >
+                          {job.status}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        {job.status === "done"
+                          ? `${job.parsed_lines.toLocaleString()} / ${job.total_lines.toLocaleString()}`
+                          : "-"}
+                      </TableCell>
+                      <TableCell>
+                        {job.status === "done" ? job.benchmark_count : "-"}
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">
+                        {new Date(job.created_at)
+                          .toISOString()
+                          .replace("T", " ")
+                          .slice(0, 19) + " UTC"}
+                      </TableCell>
+                      <TableCell>
+                        {job.status === "done" && (
+                          <Link
+                            href={`/jobs/${job.job_id}?org=${orgId}`}
+                            className="text-sm text-primary hover:underline"
+                          >
+                            View
+                          </Link>
+                        )}
+                        {job.status === "failed" && job.error_message && (
+                          <span
+                            title={job.error_message}
+                            className="cursor-help text-sm text-destructive"
+                          >
+                            Error
+                          </span>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </div>
         </div>
       )}
-    </section>
+    </div>
   );
 }

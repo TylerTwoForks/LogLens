@@ -288,6 +288,7 @@ struct ParseJobResponse {
     created_at: String,
     started_at: Option<String>,
     finished_at: Option<String>,
+    expires_at: String,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -327,7 +328,7 @@ struct LogEventResponse {
     event_type: String,
     line_number: Option<i32>,
     log_level: Option<String>,
-    message: String,
+    class_name: Option<String>,
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
@@ -351,14 +352,48 @@ struct ListEventsQuery {
     event_type: Option<String>,
     #[serde(default)]
     log_level: Option<String>,
+    /// Case-insensitive partial match on event_type
     #[serde(default)]
     search: Option<String>,
+    #[serde(default)]
+    class_name: Option<String>,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
 struct ListEventsResponse {
     events: Vec<LogEventResponse>,
     total: i64,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+struct EventTypeBucket {
+    event_type: String,
+    count: i64,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+struct TimelineBucket {
+    nanos_start: i64,
+    nanos_end: i64,
+    count: i64,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+struct EventSummaryQuery {
+    #[serde(default = "default_timeline_buckets")]
+    buckets: i64,
+}
+
+fn default_timeline_buckets() -> i64 {
+    50
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+struct EventSummaryResponse {
+    event_type_counts: Vec<EventTypeBucket>,
+    timeline: Vec<TimelineBucket>,
+    total_events: i64,
+    class_names: Vec<String>,
 }
 
 #[derive(Debug, FromRow)]
@@ -374,6 +409,7 @@ struct ParseJobRow {
     created_at: chrono::DateTime<chrono::Utc>,
     started_at: Option<chrono::DateTime<chrono::Utc>>,
     finished_at: Option<chrono::DateTime<chrono::Utc>>,
+    expires_at: chrono::DateTime<chrono::Utc>,
 }
 
 #[derive(Debug, FromRow)]
@@ -403,7 +439,7 @@ struct LogEventRow {
     event_type: String,
     line_number: Option<i32>,
     log_level: Option<String>,
-    message: String,
+    class_name: Option<String>,
 }
 
 #[derive(Debug)]
@@ -465,8 +501,10 @@ struct OrgMemberRow {
         upload_logs,
         list_jobs,
         get_job,
+        delete_job,
         list_job_benchmarks,
-        list_job_events
+        list_job_events,
+        event_summary
     ),
     components(schemas(
         HealthResponse,
@@ -494,7 +532,11 @@ struct OrgMemberRow {
         ListBenchmarksResponse,
         LogEventResponse,
         ListEventsQuery,
-        ListEventsResponse
+        ListEventsResponse,
+        EventSummaryQuery,
+        EventSummaryResponse,
+        EventTypeBucket,
+        TimelineBucket
     )),
     tags(
         (name = "service", description = "LogLens API foundation endpoints"),
@@ -1053,7 +1095,7 @@ async fn list_jobs(
         sqlx::query_as::<_, ParseJobRow>(
             r#"
             SELECT id, org_id, file_name, status, total_lines, parsed_lines,
-                   benchmark_count, error_message, created_at, started_at, finished_at
+                   benchmark_count, error_message, created_at, started_at, finished_at, expires_at
             FROM parse_jobs WHERE org_id = $1 AND status = $2
             ORDER BY id DESC
             "#,
@@ -1066,7 +1108,7 @@ async fn list_jobs(
         sqlx::query_as::<_, ParseJobRow>(
             r#"
             SELECT id, org_id, file_name, status, total_lines, parsed_lines,
-                   benchmark_count, error_message, created_at, started_at, finished_at
+                   benchmark_count, error_message, created_at, started_at, finished_at, expires_at
             FROM parse_jobs WHERE org_id = $1
             ORDER BY id DESC
             "#,
@@ -1111,6 +1153,44 @@ async fn get_job(
 
     let row = fetch_parse_job_for_org(&state.pool, job_id, org_id).await?;
     Ok(Json(to_parse_job_response(row)?))
+}
+
+#[utoipa::path(
+    delete,
+    path = "/v1/orgs/{org_id}/jobs/{job_id}",
+    tag = "ingest",
+    params(
+        ("org_id" = i64, Path, description = "Organization identifier"),
+        ("job_id" = i64, Path, description = "Parse job identifier")
+    ),
+    responses(
+        (status = 200, description = "Job deleted", body = MutationResponse),
+        (status = 401, description = "Missing or invalid auth context", body = ErrorResponse),
+        (status = 403, description = "Cross-org access denied", body = ErrorResponse),
+        (status = 404, description = "Job not found", body = ErrorResponse)
+    )
+)]
+async fn delete_job(
+    Path((org_id, job_id)): Path<(i64, i64)>,
+    headers: HeaderMap,
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<MutationResponse>, ApiError> {
+    let user = authenticate(&headers, &state.pool).await?;
+    let caller_role = fetch_org_role(&state.pool, org_id, user.user_id).await?;
+    let _ = require_permission(caller_role, OrgPermission::View)?;
+
+    let _ = fetch_parse_job_for_org(&state.pool, job_id, org_id).await?;
+
+    sqlx::query("DELETE FROM parse_jobs WHERE id = $1 AND org_id = $2")
+        .bind(job_id)
+        .bind(org_id)
+        .execute(&state.pool)
+        .await
+        .map_err(|e| ApiError::internal(format!("failed to delete parse job: {e}")))?;
+
+    Ok(Json(MutationResponse {
+        message: format!("Job {job_id} deleted"),
+    }))
 }
 
 #[utoipa::path(
@@ -1174,7 +1254,8 @@ async fn list_job_benchmarks(
         ("limit" = Option<i64>, Query, description = "Pagination limit (max 500)"),
         ("event_type" = Option<String>, Query, description = "Filter by event type"),
         ("log_level" = Option<String>, Query, description = "Filter by log level"),
-        ("search" = Option<String>, Query, description = "Search message text")
+        ("search" = Option<String>, Query, description = "Case-insensitive partial match on event_type"),
+        ("class_name" = Option<String>, Query, description = "Filter by Apex class/trigger name")
     ),
     responses(
         (status = 200, description = "Parsed log events", body = ListEventsResponse),
@@ -1209,8 +1290,14 @@ async fn list_job_events(
         where_clauses.push(format!("log_level = ${bind_idx}"));
         bind_idx += 1;
     }
-    if query.search.is_some() {
-        where_clauses.push(format!("message ILIKE ${bind_idx}"));
+
+    let search_pattern = query.search.as_ref().map(|s| format!("%{s}%"));
+    if search_pattern.is_some() {
+        where_clauses.push(format!("event_type ILIKE ${bind_idx}"));
+        bind_idx += 1;
+    }
+    if query.class_name.is_some() {
+        where_clauses.push(format!("class_name = ${bind_idx}"));
         bind_idx += 1;
     }
 
@@ -1218,13 +1305,12 @@ async fn list_job_events(
 
     let count_sql = format!("SELECT COUNT(*)::bigint FROM parsed_log_events WHERE {where_clause}");
     let select_sql = format!(
-        "SELECT line_index, timestamp, nanos, event_type, line_number, log_level, message \
+        "SELECT line_index, timestamp, nanos, event_type, line_number, log_level, class_name \
          FROM parsed_log_events WHERE {where_clause} \
          ORDER BY line_index LIMIT ${bind_idx} OFFSET ${}",
         bind_idx + 1
     );
 
-    // Build the count query
     let mut count_q = sqlx::query_scalar::<_, i64>(&count_sql).bind(job_id);
     if let Some(ref et) = query.event_type {
         count_q = count_q.bind(et);
@@ -1232,8 +1318,11 @@ async fn list_job_events(
     if let Some(ref ll) = query.log_level {
         count_q = count_q.bind(ll);
     }
-    if let Some(ref s) = query.search {
-        count_q = count_q.bind(format!("%{s}%"));
+    if let Some(ref sp) = search_pattern {
+        count_q = count_q.bind(sp);
+    }
+    if let Some(ref cn) = query.class_name {
+        count_q = count_q.bind(cn);
     }
 
     let total = count_q
@@ -1241,7 +1330,6 @@ async fn list_job_events(
         .await
         .map_err(|e| ApiError::internal(format!("failed to count events: {e}")))?;
 
-    // Build the select query
     let mut select_q = sqlx::query_as::<_, LogEventRow>(&select_sql).bind(job_id);
     if let Some(ref et) = query.event_type {
         select_q = select_q.bind(et);
@@ -1249,8 +1337,11 @@ async fn list_job_events(
     if let Some(ref ll) = query.log_level {
         select_q = select_q.bind(ll);
     }
-    if let Some(ref s) = query.search {
-        select_q = select_q.bind(format!("%{s}%"));
+    if let Some(ref sp) = search_pattern {
+        select_q = select_q.bind(sp);
+    }
+    if let Some(ref cn) = query.class_name {
+        select_q = select_q.bind(cn);
     }
     select_q = select_q.bind(page_limit).bind(page_offset);
 
@@ -1261,6 +1352,131 @@ async fn list_job_events(
 
     let events = rows.into_iter().map(to_event_response).collect();
     Ok(Json(ListEventsResponse { events, total }))
+}
+
+#[utoipa::path(
+    get,
+    path = "/v1/orgs/{org_id}/jobs/{job_id}/event-summary",
+    tag = "ingest",
+    params(
+        ("org_id" = i64, Path, description = "Organization identifier"),
+        ("job_id" = i64, Path, description = "Parse job identifier"),
+        ("buckets" = Option<i64>, Query, description = "Number of timeline buckets (default 50, max 200)")
+    ),
+    responses(
+        (status = 200, description = "Aggregated event summary for charts", body = EventSummaryResponse),
+        (status = 401, description = "Missing or invalid auth context", body = ErrorResponse),
+        (status = 403, description = "Cross-org access denied", body = ErrorResponse),
+        (status = 404, description = "Job not found", body = ErrorResponse)
+    )
+)]
+async fn event_summary(
+    Path((org_id, job_id)): Path<(i64, i64)>,
+    Query(query): Query<EventSummaryQuery>,
+    headers: HeaderMap,
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<EventSummaryResponse>, ApiError> {
+    let user = authenticate(&headers, &state.pool).await?;
+    let caller_role = fetch_org_role(&state.pool, org_id, user.user_id).await?;
+    let _ = require_permission(caller_role, OrgPermission::View)?;
+    let _ = fetch_parse_job_for_org(&state.pool, job_id, org_id).await?;
+
+    let bucket_count = query.buckets.clamp(1, 200);
+
+    #[derive(FromRow)]
+    struct TypeCount {
+        event_type: String,
+        count: i64,
+    }
+
+    let type_counts: Vec<TypeCount> = sqlx::query_as(
+        "SELECT event_type, COUNT(*)::bigint AS count \
+         FROM parsed_log_events WHERE job_id = $1 \
+         GROUP BY event_type ORDER BY count DESC",
+    )
+    .bind(job_id)
+    .fetch_all(&state.pool)
+    .await
+    .map_err(|e| ApiError::internal(format!("failed to aggregate event types: {e}")))?;
+
+    let total_events: i64 = type_counts.iter().map(|tc| tc.count).sum();
+
+    let event_type_counts: Vec<EventTypeBucket> = type_counts
+        .into_iter()
+        .map(|tc| EventTypeBucket {
+            event_type: tc.event_type,
+            count: tc.count,
+        })
+        .collect();
+
+    #[derive(FromRow)]
+    struct NanosRange {
+        min_nanos: Option<i64>,
+        max_nanos: Option<i64>,
+    }
+
+    let range: NanosRange = sqlx::query_as(
+        "SELECT MIN(nanos)::bigint AS min_nanos, MAX(nanos)::bigint AS max_nanos \
+         FROM parsed_log_events WHERE job_id = $1 AND nanos IS NOT NULL",
+    )
+    .bind(job_id)
+    .fetch_one(&state.pool)
+    .await
+    .map_err(|e| ApiError::internal(format!("failed to get nanos range: {e}")))?;
+
+    let timeline = match (range.min_nanos, range.max_nanos) {
+        (Some(min_n), Some(max_n)) if max_n > min_n => {
+            let span = max_n - min_n;
+            let bucket_width = (span + bucket_count - 1) / bucket_count;
+
+            #[derive(FromRow)]
+            struct BucketCount {
+                bucket: Option<i64>,
+                count: i64,
+            }
+
+            let rows: Vec<BucketCount> = sqlx::query_as(
+                "SELECT ((nanos - $2) / $3)::bigint AS bucket, COUNT(*)::bigint AS count \
+                 FROM parsed_log_events \
+                 WHERE job_id = $1 AND nanos IS NOT NULL \
+                 GROUP BY bucket ORDER BY bucket",
+            )
+            .bind(job_id)
+            .bind(min_n)
+            .bind(bucket_width)
+            .fetch_all(&state.pool)
+            .await
+            .map_err(|e| ApiError::internal(format!("failed to bucket timeline: {e}")))?;
+
+            rows.into_iter()
+                .filter_map(|r| {
+                    r.bucket.map(|b| TimelineBucket {
+                        nanos_start: min_n + b * bucket_width,
+                        nanos_end: min_n + (b + 1) * bucket_width,
+                        count: r.count,
+                    })
+                })
+                .collect()
+        }
+        _ => vec![],
+    };
+
+    let class_names: Vec<String> = sqlx::query_scalar(
+        "SELECT DISTINCT class_name FROM parsed_log_events \
+         WHERE job_id = $1 AND class_name IS NOT NULL \
+         ORDER BY class_name",
+    )
+    .bind(job_id)
+    .fetch_all(&state.pool)
+    .await
+    .map_err(|e| ApiError::internal(format!("failed to list class names: {e}")))?;
+
+    Ok(Json(EventSummaryResponse {
+        event_type_counts,
+        timeline,
+        total_events,
+        class_names,
+    }))
 }
 
 async fn run_parse_job(pool: PgPool, job_id: i64, content: String) {
@@ -1283,11 +1499,12 @@ async fn run_parse_job(pool: PgPool, job_id: i64, content: String) {
     let benchmarks = parser_sfdc_benchmarks::extract_benchmarks(&events);
     let benchmark_count = benchmarks.len() as i32;
 
-    // Insert parsed events in batches
+    // Insert parsed events in batches (message and raw_line are deliberately
+    // NOT persisted to satisfy the no-durable-raw-log-retention requirement).
     let batch_size = 500;
     for chunk in events.chunks(batch_size) {
         let mut qb = String::from(
-            "INSERT INTO parsed_log_events (job_id, line_index, timestamp, nanos, event_type, line_number, log_level, message, raw_line) VALUES ",
+            "INSERT INTO parsed_log_events (job_id, line_index, timestamp, nanos, event_type, line_number, log_level, class_name) VALUES ",
         );
         let mut params_idx = 1u32;
 
@@ -1296,7 +1513,7 @@ async fn run_parse_job(pool: PgPool, job_id: i64, content: String) {
                 qb.push_str(", ");
             }
             qb.push_str(&format!(
-                "(${}, ${}, ${}, ${}, ${}, ${}, ${}, ${}, ${})",
+                "(${}, ${}, ${}, ${}, ${}, ${}, ${}, ${})",
                 params_idx,
                 params_idx + 1,
                 params_idx + 2,
@@ -1304,10 +1521,9 @@ async fn run_parse_job(pool: PgPool, job_id: i64, content: String) {
                 params_idx + 4,
                 params_idx + 5,
                 params_idx + 6,
-                params_idx + 7,
-                params_idx + 8
+                params_idx + 7
             ));
-            params_idx += 9;
+            params_idx += 8;
         }
 
         let mut q = sqlx::query(&qb);
@@ -1324,8 +1540,7 @@ async fn run_parse_job(pool: PgPool, job_id: i64, content: String) {
                 .bind(evt.event_type.to_string())
                 .bind(line_number)
                 .bind(log_level)
-                .bind(&evt.message)
-                .bind(&evt.raw_line);
+                .bind(&evt.class_name);
         }
 
         if let Err(e) = q.execute(&pool).await {
@@ -1410,7 +1625,7 @@ async fn fetch_parse_job(pool: &PgPool, job_id: i64) -> Result<ParseJobRow, ApiE
     sqlx::query_as::<_, ParseJobRow>(
         r#"
         SELECT id, org_id, file_name, status, total_lines, parsed_lines,
-               benchmark_count, error_message, created_at, started_at, finished_at
+               benchmark_count, error_message, created_at, started_at, finished_at, expires_at
         FROM parse_jobs WHERE id = $1
         "#,
     )
@@ -1429,7 +1644,7 @@ async fn fetch_parse_job_for_org(
     sqlx::query_as::<_, ParseJobRow>(
         r#"
         SELECT id, org_id, file_name, status, total_lines, parsed_lines,
-               benchmark_count, error_message, created_at, started_at, finished_at
+               benchmark_count, error_message, created_at, started_at, finished_at, expires_at
         FROM parse_jobs WHERE id = $1 AND org_id = $2
         "#,
     )
@@ -1454,6 +1669,7 @@ fn to_parse_job_response(row: ParseJobRow) -> Result<ParseJobResponse, ApiError>
         created_at: row.created_at.to_rfc3339(),
         started_at: row.started_at.map(|t| t.to_rfc3339()),
         finished_at: row.finished_at.map(|t| t.to_rfc3339()),
+        expires_at: row.expires_at.to_rfc3339(),
     })
 }
 
@@ -1485,7 +1701,7 @@ fn to_event_response(row: LogEventRow) -> LogEventResponse {
         event_type: row.event_type,
         line_number: row.line_number,
         log_level: row.log_level,
-        message: row.message,
+        class_name: row.class_name,
     }
 }
 
@@ -1728,11 +1944,13 @@ async fn serve(cli: &Cli) -> anyhow::Result<()> {
     let version =
         std::env::var("APP_VERSION").unwrap_or_else(|_| env!("CARGO_PKG_VERSION").to_owned());
     let state = Arc::new(AppState {
-        pool,
+        pool: pool.clone(),
         version,
         parse_semaphore: Arc::new(Semaphore::new(MAX_CONCURRENT_PARSE_JOBS)),
     });
     let app = build_router(state, &cli.cors_allowed_origin);
+
+    tokio::spawn(expired_job_reaper(pool));
 
     let addr: SocketAddr = format!("{}:{}", cli.host, cli.port)
         .parse()
@@ -1749,6 +1967,30 @@ async fn serve(cli: &Cli) -> anyhow::Result<()> {
         .context("axum server error")?;
 
     Ok(())
+}
+
+/// Background task that periodically deletes parse_jobs whose 30-day
+/// retention window has elapsed. CASCADE foreign keys on parsed_log_events
+/// and benchmark_snapshots handle child-row cleanup automatically.
+async fn expired_job_reaper(pool: PgPool) {
+    let interval = std::time::Duration::from_secs(60 * 60); // hourly
+    loop {
+        match sqlx::query_scalar::<_, i64>(
+            "DELETE FROM parse_jobs WHERE expires_at <= NOW() RETURNING id",
+        )
+        .fetch_all(&pool)
+        .await
+        {
+            Ok(ids) if !ids.is_empty() => {
+                info!("expired-job reaper deleted {} job(s): {:?}", ids.len(), ids);
+            }
+            Ok(_) => {}
+            Err(e) => {
+                error!("expired-job reaper failed: {e}");
+            }
+        }
+        tokio::time::sleep(interval).await;
+    }
 }
 
 async fn migrate(database_url: &str) -> anyhow::Result<()> {
@@ -1805,7 +2047,7 @@ fn build_router(state: Arc<AppState>, cors_allowed_origin: &str) -> Router {
         )
         .route("/v1/orgs/{org_id}/uploads", post(upload_logs))
         .route("/v1/orgs/{org_id}/jobs", get(list_jobs))
-        .route("/v1/orgs/{org_id}/jobs/{job_id}", get(get_job))
+        .route("/v1/orgs/{org_id}/jobs/{job_id}", get(get_job).delete(delete_job))
         .route(
             "/v1/orgs/{org_id}/jobs/{job_id}/benchmarks",
             get(list_job_benchmarks),
@@ -1813,6 +2055,10 @@ fn build_router(state: Arc<AppState>, cors_allowed_origin: &str) -> Router {
         .route(
             "/v1/orgs/{org_id}/jobs/{job_id}/events",
             get(list_job_events),
+        )
+        .route(
+            "/v1/orgs/{org_id}/jobs/{job_id}/event-summary",
+            get(event_summary),
         )
         .layer(cors)
         .with_state(state)

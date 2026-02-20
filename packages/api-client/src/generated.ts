@@ -305,7 +305,6 @@ export interface components {
             log_level?: string | null;
             /** Format: int64 */
             offset?: number | null;
-            search?: string | null;
         };
         ListEventsResponse: {
             events: components["schemas"]["LogEventResponse"][];
@@ -328,7 +327,6 @@ export interface components {
             /** Format: int32 */
             line_number?: number | null;
             log_level?: string | null;
-            message: string;
             /** Format: int64 */
             nanos?: number | null;
             timestamp: string;
@@ -366,6 +364,7 @@ export interface components {
             benchmark_count: number;
             created_at: string;
             error_message?: string | null;
+            expires_at: string;
             file_name: string;
             finished_at?: string | null;
             /** Format: int64 */
@@ -781,8 +780,6 @@ export interface operations {
                 event_type?: string;
                 /** @description Filter by log level */
                 log_level?: string;
-                /** @description Search message text */
-                search?: string;
             };
             header?: never;
             path: {

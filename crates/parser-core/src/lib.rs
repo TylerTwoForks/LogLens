@@ -123,6 +123,9 @@ pub struct ParsedEvent {
     pub level: Option<LogLevel>,
     pub message: String,
     pub raw_line: String,
+    /// Derived Apex class or trigger name, extracted from events like
+    /// CODE_UNIT_STARTED, METHOD_ENTRY, and METHOD_EXIT.
+    pub class_name: Option<String>,
 }
 
 /// Attempt to parse a single Salesforce debug log line.
@@ -191,6 +194,8 @@ pub fn parse_line(line: &str) -> Option<ParsedEvent> {
         }
     };
 
+    let class_name = extract_class_name(&event_type, &message);
+
     Some(ParsedEvent {
         timestamp,
         nanos,
@@ -199,6 +204,7 @@ pub fn parse_line(line: &str) -> Option<ParsedEvent> {
         level,
         message,
         raw_line: trimmed.to_owned(),
+        class_name,
     })
 }
 
@@ -229,6 +235,62 @@ fn parse_timestamp(raw: &str) -> Option<(String, Option<u64>)> {
 fn parse_line_number(seg: &str) -> Option<u32> {
     let inner = seg.trim_start_matches('[').trim_end_matches(']').trim();
     inner.parse().ok()
+}
+
+/// Extract a class/trigger name from events that carry one.
+///
+/// Patterns handled:
+/// - CODE_UNIT_STARTED: message segment often contains an Apex ID followed
+///   by the class name, or a trigger label like `MyObj__c on MyTrigger trigger ...`.
+/// - METHOD_ENTRY/EXIT: message often looks like `ClassName.methodName` or
+///   just `ClassName`.
+fn extract_class_name(event_type: &SfdcEventType, message: &str) -> Option<String> {
+    match event_type {
+        SfdcEventType::CodeUnitStarted | SfdcEventType::CodeUnitFinished => {
+            let msg = message.trim();
+            if msg.is_empty() {
+                return None;
+            }
+            // Skip Salesforce IDs (15 or 18 char alphanumeric starting with 01)
+            // and look for the descriptive segment.
+            let segments: Vec<&str> = msg.splitn(2, ' ').collect();
+            let candidate = if segments.len() == 2
+                && segments[0].len() >= 15
+                && segments[0].starts_with("01")
+            {
+                segments[1]
+            } else {
+                msg
+            };
+            // Extract class name: take up to the first space or "trigger" keyword
+            let name = candidate
+                .split(|c: char| c == ' ' || c == ':')
+                .next()
+                .unwrap_or(candidate)
+                .trim();
+            if name.is_empty() || name.starts_with('[') {
+                None
+            } else {
+                Some(name.to_owned())
+            }
+        }
+        SfdcEventType::MethodEntry | SfdcEventType::MethodExit => {
+            let msg = message.trim();
+            // Format is typically "ClassName.methodName" — take the class part
+            if let Some(dot_pos) = msg.find('.') {
+                let class_part = &msg[..dot_pos];
+                if !class_part.is_empty() {
+                    return Some(class_part.to_owned());
+                }
+            }
+            if !msg.is_empty() {
+                Some(msg.to_owned())
+            } else {
+                None
+            }
+        }
+        _ => None,
+    }
 }
 
 fn looks_like_level(s: &str) -> bool {

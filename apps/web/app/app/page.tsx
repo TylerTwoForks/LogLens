@@ -1,12 +1,22 @@
-import { getMe, listOrgMembers, listOrgs, listJobs } from "@loglens/api-client";
-import { buildApiAuthContext, requireSession } from "../../lib/auth";
 import {
-  createOrgAction,
-  updateIndividualLicenseAction,
-  updateOrgLicenseAction,
-  updateOrgMemberRoleAction,
-} from "./actions";
-import UploadPanel from "../../components/UploadPanel";
+  listOrgs,
+  listJobs,
+} from "@loglens/api-client";
+import { buildApiAuthContext, requireSession } from "../../lib/auth";
+import { createOrgAction } from "./actions";
+import DashboardWorkspace from "../../components/DashboardWorkspace";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import Link from "next/link";
+import { Building2 } from "lucide-react";
 
 export const dynamic = "force-dynamic";
 
@@ -15,11 +25,15 @@ type AppPageProps = {
 };
 
 function readServerApiBaseUrl() {
-  return process.env.API_INTERNAL_URL ?? process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8080";
+  return (
+    process.env.API_INTERNAL_URL ??
+    process.env.NEXT_PUBLIC_API_BASE_URL ??
+    "http://localhost:8080"
+  );
 }
 
 function readBrowserApiBaseUrl() {
-  return process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8080";
+  return "/api/proxy";
 }
 
 function pickFirst(value: string | string[] | undefined): string | null {
@@ -37,11 +51,9 @@ function parseOptionalNumber(value: string | null): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-function canManageOrg(role: "owner" | "admin" | "member" | "viewer"): boolean {
-  return role === "owner" || role === "admin";
-}
-
-function noticeOrError(searchParams?: Record<string, string | string[] | undefined>) {
+function noticeOrError(
+  searchParams?: Record<string, string | string[] | undefined>
+) {
   const notice = pickFirst(searchParams?.notice);
   const error = pickFirst(searchParams?.error);
   return { notice, error };
@@ -54,146 +66,135 @@ export default async function AppPage({ searchParams }: AppPageProps) {
   const serverApiUrl = readServerApiBaseUrl();
   const browserApiUrl = readBrowserApiBaseUrl();
 
-  const [me, organizations] = await Promise.all([getMe(auth, serverApiUrl), listOrgs(auth, serverApiUrl)]);
-  const requestedOrgId = parseOptionalNumber(pickFirst(resolvedSearchParams?.org));
+  const organizations = await listOrgs(auth, serverApiUrl);
+  const requestedOrgId = parseOptionalNumber(
+    pickFirst(resolvedSearchParams?.org)
+  );
   const selectedOrg =
-    organizations.orgs.find((org) => org.org_id === requestedOrgId) ?? organizations.orgs[0] ?? null;
+    organizations.orgs.find((org) => org.org_id === requestedOrgId) ??
+    organizations.orgs[0] ??
+    null;
 
-  const [members, orgJobs] = await Promise.all([
-    selectedOrg ? listOrgMembers(auth, selectedOrg.org_id, serverApiUrl) : Promise.resolve(null),
-    selectedOrg ? listJobs(auth, selectedOrg.org_id, {}, serverApiUrl) : Promise.resolve(null),
-  ]);
-  const canManageSelectedOrg = selectedOrg ? canManageOrg(selectedOrg.role) : false;
+  const orgJobs = selectedOrg
+    ? await listJobs(auth, selectedOrg.org_id, {}, serverApiUrl)
+    : null;
+
   const { notice, error } = noticeOrError(resolvedSearchParams);
 
   return (
-    <section>
-      <h2>Phase 2 Dashboard</h2>
-      <p>API base URL: {serverApiUrl}</p>
-      {notice ? <p>Notice: {notice}</p> : null}
-      {error ? <p>Error: {error}</p> : null}
+    <div className="space-y-6">
+      {notice && (
+        <div className="rounded-md border border-info bg-info/10 px-4 py-3 text-sm text-info">
+          {notice.replaceAll("_", " ")}
+        </div>
+      )}
+      {error && (
+        <div className="rounded-md border border-destructive bg-destructive/10 px-4 py-3 text-sm text-destructive">
+          {error}
+        </div>
+      )}
 
-      <section>
-        <h3>Authenticated User</h3>
-        <ul>
-          <li>Auth subject: {me.auth_subject}</li>
-          <li>Email: {me.email}</li>
-          <li>Individual tier: {me.individual_license.tier}</li>
-          <li>Individual status: {me.individual_license.status}</li>
-        </ul>
-        <p>Entitlements: {me.individual_license.features.join(", ") || "(none)"}</p>
-        <form action={updateIndividualLicenseAction}>
-          <label htmlFor="individual-tier">Tier</label>
-          <select id="individual-tier" name="tier" defaultValue={me.individual_license.tier}>
-            <option value="free">free</option>
-            <option value="pro">pro</option>
-            <option value="enterprise">enterprise</option>
-          </select>
-          <label htmlFor="individual-status">Status</label>
-          <select id="individual-status" name="status" defaultValue={me.individual_license.status}>
-            <option value="active">active</option>
-            <option value="past_due">past_due</option>
-            <option value="canceled">canceled</option>
-          </select>
-          <button type="submit">Update individual license</button>
-        </form>
-      </section>
-
-      <section>
-        <h3>Organizations</h3>
-        <ul>
-          {organizations.orgs.map((org) => (
-            <li key={org.org_id}>
-              <a href={`/app?org=${org.org_id}`}>
-                {org.name} (#{org.org_id}) - role {org.role}
-              </a>
-            </li>
-          ))}
-        </ul>
-        <form action={createOrgAction}>
-          <label htmlFor="org-name">Create organization</label>
-          <input id="org-name" name="name" type="text" required />
-          <button type="submit">Create</button>
-        </form>
-      </section>
-
+      {/* Organization workspace */}
       {selectedOrg ? (
-        <section>
-          <h3>Selected Organization</h3>
-          <ul>
-            <li>Name: {selectedOrg.name}</li>
-            <li>Role: {selectedOrg.role}</li>
-            <li>Tier: {selectedOrg.license.tier}</li>
-            <li>Status: {selectedOrg.license.status}</li>
-          </ul>
-          <p>Entitlements: {selectedOrg.license.features.join(", ") || "(none)"}</p>
+        <>
+          {/* Org header */}
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-accent/10 text-accent">
+                <Building2 className="h-5 w-5" />
+              </div>
+              <div>
+                <h2 className="text-xl font-semibold text-foreground">
+                  {selectedOrg.name}
+                </h2>
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Badge variant="secondary" className="text-xs">
+                    {selectedOrg.license.tier}
+                  </Badge>
+                  <Badge
+                    variant="outline"
+                    className={
+                      selectedOrg.license.status === "active"
+                        ? "border-success text-success text-xs"
+                        : "text-xs"
+                    }
+                  >
+                    {selectedOrg.license.status}
+                  </Badge>
+                  <span className="text-xs">
+                    Your role: {selectedOrg.role}
+                  </span>
+                </div>
+              </div>
+            </div>
 
-          {canManageSelectedOrg ? (
-            <form action={updateOrgLicenseAction}>
-              <input type="hidden" name="orgId" value={selectedOrg.org_id} />
-              <label htmlFor="org-tier">Tier</label>
-              <select id="org-tier" name="tier" defaultValue={selectedOrg.license.tier}>
-                <option value="free">free</option>
-                <option value="pro">pro</option>
-                <option value="enterprise">enterprise</option>
-              </select>
-              <label htmlFor="org-status">Status</label>
-              <select id="org-status" name="status" defaultValue={selectedOrg.license.status}>
-                <option value="active">active</option>
-                <option value="past_due">past_due</option>
-                <option value="canceled">canceled</option>
-              </select>
-              <button type="submit">Update organization license</button>
-            </form>
-          ) : (
-            <p>Billing controls are limited to owner/admin roles.</p>
-          )}
-
-          <h4>Members</h4>
-          <ul>
-            {(members?.members ?? []).map((member) => (
-              <li key={member.user_id}>
-                #{member.user_id} {member.email} - {member.role}
-              </li>
-            ))}
-          </ul>
-
-          {canManageSelectedOrg ? (
-            <form action={updateOrgMemberRoleAction}>
-              <input type="hidden" name="orgId" value={selectedOrg.org_id} />
-              <label htmlFor="member-user-id">Member</label>
-              <select id="member-user-id" name="memberUserId">
-                {(members?.members ?? []).map((member) => (
-                  <option key={member.user_id} value={member.user_id}>
-                    #{member.user_id} {member.email}
-                  </option>
+            {/* Org switcher (if multiple orgs) */}
+            {organizations.orgs.length > 1 && (
+              <div className="flex gap-1">
+                {organizations.orgs.map((org) => (
+                  <Button
+                    key={org.org_id}
+                    variant={
+                      org.org_id === selectedOrg.org_id
+                        ? "default"
+                        : "outline"
+                    }
+                    size="sm"
+                    asChild
+                  >
+                    <Link href={`/app?org=${org.org_id}`}>{org.name}</Link>
+                  </Button>
                 ))}
-              </select>
-              <label htmlFor="member-role">Role</label>
-              <select id="member-role" name="role" defaultValue="member">
-                <option value="owner">owner</option>
-                <option value="admin">admin</option>
-                <option value="member">member</option>
-                <option value="viewer">viewer</option>
-              </select>
-              <button type="submit">Update member role</button>
-            </form>
-          ) : (
-            <p>Member role controls are limited to owner/admin roles.</p>
-          )}
+              </div>
+            )}
+          </div>
 
-          <UploadPanel
+          {/* Workspace: upload + jobs + inline detail */}
+          <DashboardWorkspace
             orgId={selectedOrg.org_id}
             auth={auth}
             initialJobs={orgJobs?.jobs ?? []}
             apiBaseUrl={browserApiUrl}
           />
-        </section>
+        </>
       ) : (
-        <section>
-          <p>No organizations yet. Create one to start organization-scoped testing.</p>
-        </section>
+        /* No org selected -- onboarding */
+        <Card className="mx-auto max-w-lg">
+          <CardHeader className="text-center">
+            <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-primary/10 text-primary">
+              <Building2 className="h-7 w-7" />
+            </div>
+            <CardTitle>Get Started</CardTitle>
+            <CardDescription>
+              Create your first organization to start analyzing Salesforce
+              debug logs.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <form
+              action={createOrgAction}
+              className="flex items-end gap-3"
+            >
+              <div className="flex flex-1 flex-col gap-1">
+                <label
+                  htmlFor="org-name"
+                  className="text-xs font-medium text-muted-foreground"
+                >
+                  Organization name
+                </label>
+                <Input
+                  id="org-name"
+                  name="name"
+                  type="text"
+                  required
+                  placeholder="My Organization"
+                />
+              </div>
+              <Button type="submit">Create</Button>
+            </form>
+          </CardContent>
+        </Card>
       )}
-    </section>
+    </div>
   );
 }

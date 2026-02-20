@@ -1,5 +1,13 @@
 "use client";
 
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+
 export default function AppError({
   error,
   reset,
@@ -8,12 +16,18 @@ export default function AppError({
   reset: () => void;
 }) {
   return (
-    <section>
-      <h2>Something went wrong</h2>
-      <p>{error.message}</p>
-      <button type="button" onClick={reset}>
-        Try again
-      </button>
-    </section>
+    <Card className="max-w-lg border-destructive">
+      <CardHeader>
+        <CardTitle className="text-destructive">
+          Something went wrong
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <p className="text-sm text-muted-foreground">{error.message}</p>
+        <Button variant="outline" onClick={reset}>
+          Try again
+        </Button>
+      </CardContent>
+    </Card>
   );
 }

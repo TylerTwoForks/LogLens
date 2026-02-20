@@ -5,6 +5,8 @@ import {
   updateMeLicense,
   updateOrgLicense,
   updateOrgMemberRole,
+  listOrgMembers,
+  getMe,
   type LicenseStatus,
   type LicenseTier,
   type OrgRole,
@@ -15,6 +17,13 @@ import { buildApiAuthContext, requireSession } from "../../lib/auth";
 const LICENSE_TIERS = ["free", "pro", "enterprise"] as const;
 const LICENSE_STATUSES = ["active", "past_due", "canceled"] as const;
 const ORG_ROLES = ["owner", "admin", "member", "viewer"] as const;
+
+const ROLE_RANK: Record<string, number> = {
+  owner: 4,
+  admin: 3,
+  member: 2,
+  viewer: 1,
+};
 
 function readApiBaseUrl() {
   return process.env.API_INTERNAL_URL ?? process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8080";
@@ -133,8 +142,25 @@ export async function updateOrgMemberRoleAction(formData: FormData) {
   try {
     const orgId = parseIntField(formData.get("orgId"), "orgId");
     const memberUserId = parseIntField(formData.get("memberUserId"), "memberUserId");
-    const role = parseRole(formData.get("role"));
-    await updateOrgMemberRole(auth, orgId, memberUserId, { role }, apiBaseUrl);
+    const newRole = parseRole(formData.get("role"));
+
+    const me = await getMe(auth, apiBaseUrl);
+    const isSelf = memberUserId === me.user_id;
+    if (isSelf) {
+      const members = await listOrgMembers(auth, orgId, apiBaseUrl);
+      const actingMember = members.members.find((m) => m.user_id === me.user_id);
+      if (actingMember) {
+        const currentRank = ROLE_RANK[actingMember.role] ?? 0;
+        const newRank = ROLE_RANK[newRole] ?? 0;
+        if (newRank < currentRank) {
+          throw new Error(
+            `Cannot lower your own role from ${actingMember.role} to ${newRole}. Ask another owner or admin to change your role.`,
+          );
+        }
+      }
+    }
+
+    await updateOrgMemberRole(auth, orgId, memberUserId, { role: newRole }, apiBaseUrl);
     redirectUrl = `/app?org=${orgId}&notice=member_role_updated`;
   } catch (error) {
     safeRedirect("/app", error);
