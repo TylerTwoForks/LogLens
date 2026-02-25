@@ -13,8 +13,8 @@ Use this as a quick phase sequence reference. The active phase pointer is in `.c
 - `phase-1-monorepo-foundation` 
 - `phase-2-auth-org-billing` 
 - `phase-3-ingest-parse-jobs` 
-- `phase-4-visualizations-log-viewer` `<-- CURRENT`
-- `phase-5-security-privacy-hardening`
+- `phase-4-visualizations-log-viewer` 
+- `phase-5-security-privacy-hardening` `<-- CURRENT`
 - `phase-6-beta-launch-ga-readiness`
 - `phase-7-optional-redis-scaleout`
 

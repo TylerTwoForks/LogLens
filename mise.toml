@@ -1,4 +1,5 @@
 [tools]
+1password = "latest"
 node = "lts"
 pnpm = "10.30.0"
 rust = "1.93.1"

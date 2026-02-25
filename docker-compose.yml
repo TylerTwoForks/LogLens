@@ -19,6 +19,8 @@ services:
     build:
       context: .
       dockerfile: apps/api/Dockerfile
+      args:
+        PROFILE: ${PROFILE:-dev}
     environment:
       DATABASE_URL: postgres://loglens:loglens@db:5432/loglens
       APP_HOST: 0.0.0.0

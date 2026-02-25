@@ -255,14 +255,7 @@ enum JobStatus {
 }
 
 impl JobStatus {
-    fn as_str(&self) -> &'static str {
-        match self {
-            Self::Queued => "queued",
-            Self::Running => "running",
-            Self::Done => "done",
-            Self::Failed => "failed",
-        }
-    }
+    
 
     fn from_db(value: &str) -> Result<Self, ApiError> {
         match value {

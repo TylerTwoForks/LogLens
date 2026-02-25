@@ -9,8 +9,8 @@ Use this file as the active execution pointer for development work.
 
 ## Active Pointer
 
-- `current_phase`: `phase-4-visualizations-log-viewer` `<-- CURRENT`
-- `phase_rule_file`: `.cursor/rules/loglens-phase-4-visualizations-log-viewer.mdc`
+- `current_phase`: `phase-5-security-privacy-hardening` `<-- CURRENT`
+- `phase_rule_file`: `.cursor/rules/loglens-phase-5-security-privacy-hardening.mdc`
 - `phase_0_reference`: `docs/plans/phase-0-dev-environment-setup.mdc`
 
 ## Agent Behavior

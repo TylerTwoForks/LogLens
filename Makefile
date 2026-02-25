@@ -1,6 +1,6 @@
 .DEFAULT_GOAL := help
 
-.PHONY: help build-backend build-frontend build-db migrate build-all up-all redeploy-db redeploy-api redeploy-web logs-db logs-api logs-web tear-down-all
+.PHONY: help build-backend build-frontend build-db migrate build-all build-all-dev build-all-prod up-all redeploy-db redeploy-api redeploy-web logs-db logs-api logs-web tear-down-all
 
 help: ## Show available Make targets
 	@echo "Available targets:"
@@ -18,8 +18,13 @@ build-db: ## Start PostgreSQL service in background
 migrate: ## Run API database migrations
 	docker compose run --rm api loglens-api migrate
 
-build-all: ## Build images and start DB, API, and web
-	docker compose up -d --build db api web
+build-all: build-all-dev ## Build images and start DB, API, and web (alias for build-all-dev)
+
+build-all-dev: ## Build with dev profile (no optimizations, faster compile) and start all services
+	PROFILE=dev docker compose up -d --build db api web
+
+build-all-prod: ## Build with release profile (optimized) and start all services
+	PROFILE=release docker compose up -d --build db api web
 
 up-all: ## Build and start DB, API, and web (preferred)
 	docker compose up -d --build db api web

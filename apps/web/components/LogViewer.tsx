@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import type { LogEvent } from "@loglens/api-client";
+import { Bookmark } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
@@ -89,6 +90,9 @@ export default function LogViewer({
   const [classNameFilter, setClassNameFilter] = useState("");
   const [searchText, setSearchText] = useState("");
 
+  const [bookmarked, setBookmarked] = useState<Map<number, DisplayEvent>>(new Map());
+  const [showBookmarkedOnly, setShowBookmarkedOnly] = useState(false);
+
   const containerRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -111,12 +115,33 @@ export default function LogViewer({
     };
   }, []);
 
+  const displayedEvents = showBookmarkedOnly
+    ? Array.from(bookmarked.values()).sort((a, b) => a.line_index - b.line_index)
+    : events;
+
   const virtualizer = useVirtualizer({
-    count: events.length,
+    count: displayedEvents.length,
     getScrollElement: () => containerRef.current,
     estimateSize: () => ROW_HEIGHT,
     overscan: 20,
   });
+
+  const toggleBookmark = useCallback((evt: DisplayEvent) => {
+    setBookmarked((prev) => {
+      const next = new Map(prev);
+      if (next.has(evt.line_index)) {
+        next.delete(evt.line_index);
+      } else {
+        next.set(evt.line_index, evt);
+      }
+      return next;
+    });
+  }, []);
+
+  const clearBookmarks = useCallback(() => {
+    setBookmarked(new Map());
+    setShowBookmarkedOnly(false);
+  }, []);
 
   const fetchFiltered = useCallback(
     async (
@@ -197,7 +222,8 @@ export default function LogViewer({
   );
 
   const loadMoreEvents = useCallback(async () => {
-    if (loadingRef.current || events.length >= total) return;
+    if (loadingRef.current || events.length >= total || showBookmarkedOnly)
+      return;
     setLoading(true);
     loadingRef.current = true;
     try {
@@ -227,6 +253,7 @@ export default function LogViewer({
     classNameFilter,
     searchText,
     onLoadMore,
+    showBookmarkedOnly,
   ]);
 
   const handleScroll = useCallback(() => {
@@ -252,9 +279,34 @@ export default function LogViewer({
 
   const renderRow = (evt: DisplayEvent) => {
     const levelClass = LOG_LEVEL_COLORS[evt.log_level ?? ""] ?? "text-muted-foreground";
+    const isBookmarked = bookmarked.has(evt.line_index);
 
     return (
       <>
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            toggleBookmark(evt);
+          }}
+          className={cn(
+            "shrink-0 flex items-center justify-center transition-colors",
+            isBookmarked
+              ? "text-amber-400"
+              : "text-muted-foreground/20 hover:text-muted-foreground/50"
+          )}
+          style={{
+            width: 20,
+            minWidth: 20,
+            marginRight: "0.25rem",
+            lineHeight: `${ROW_HEIGHT}px`,
+          }}
+          title={isBookmarked ? "Remove bookmark" : "Bookmark this line"}
+        >
+          <Bookmark
+            className="h-3 w-3"
+            fill={isBookmarked ? "currentColor" : "none"}
+          />
+        </button>
         <span
           className="shrink-0 text-right text-muted-foreground/50"
           style={{
@@ -440,6 +492,36 @@ export default function LogViewer({
           Wrap lines
         </label>
 
+        {/* Bookmark filter controls */}
+        <button
+          disabled={bookmarked.size === 0}
+          onClick={() => setShowBookmarkedOnly((prev) => !prev)}
+          className={cn(
+            "inline-flex h-8 items-center gap-1.5 rounded-md border px-2 text-xs transition-colors",
+            showBookmarkedOnly
+              ? "border-amber-400 bg-amber-400/10 text-amber-400"
+              : bookmarked.size > 0
+                ? "border-input bg-background text-muted-foreground hover:text-foreground"
+                : "cursor-not-allowed border-input bg-background text-muted-foreground/40"
+          )}
+        >
+          <Bookmark
+            className="h-3 w-3"
+            fill={showBookmarkedOnly ? "currentColor" : "none"}
+          />
+          {bookmarked.size > 0 ? `Bookmarks (${bookmarked.size})` : "Bookmarks"}
+        </button>
+
+        {bookmarked.size > 0 && (
+          <button
+            onClick={clearBookmarks}
+            className="inline-flex h-8 items-center rounded-md border border-input bg-background px-2 text-xs text-muted-foreground transition-colors hover:text-destructive"
+            title="Clear all bookmarks"
+          >
+            Clear
+          </button>
+        )}
+
         {loading && (
           <span className="text-xs text-chart-1">Loading...</span>
         )}
@@ -448,7 +530,9 @@ export default function LogViewer({
         )}
 
         <span className="ml-auto text-xs text-muted-foreground">
-          {events.length} of {total} events loaded
+          {showBookmarkedOnly
+            ? `${displayedEvents.length} of ${bookmarked.size} bookmarks`
+            : `${events.length} of ${total} events loaded`}
         </span>
       </div>
 
@@ -464,6 +548,10 @@ export default function LogViewer({
           className="sticky top-0 z-10 flex whitespace-nowrap border-b-2 border-border bg-muted px-2 font-semibold text-muted-foreground"
           style={{ height: ROW_HEIGHT, minWidth: "fit-content" }}
         >
+          <span
+            className="shrink-0"
+            style={{ width: 20, minWidth: 20, marginRight: "0.25rem" }}
+          />
           <span
             className="shrink-0 text-right"
             style={{ width: 50, minWidth: 50, marginRight: "0.75rem" }}
@@ -501,21 +589,24 @@ export default function LogViewer({
           }}
         >
           {virtualItems.map((virtualRow) => {
-            const evt = events[virtualRow.index];
+            const evt = displayedEvents[virtualRow.index];
             if (!evt) return null;
+            const isBookmarked = bookmarked.has(evt.line_index);
             return (
               <div
                 key={virtualRow.key}
+                ref={virtualizer.measureElement}
+                data-index={virtualRow.index}
                 className={cn(
                   "flex border-b border-border px-2",
-                  wrap ? "whitespace-pre-wrap break-all" : "whitespace-nowrap"
+                  wrap ? "whitespace-pre-wrap break-all" : "whitespace-nowrap",
+                  isBookmarked && "border-l-2 border-l-amber-400 bg-amber-400/5"
                 )}
                 style={{
                   position: "absolute",
                   top: 0,
                   left: 0,
                   width: "100%",
-                  height: `${virtualRow.size}px`,
                   transform: `translateY(${virtualRow.start}px)`,
                   alignItems: "flex-start",
                 }}
