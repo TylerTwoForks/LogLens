@@ -115,6 +115,36 @@ export type AuthContext = {
   email?: string;
 };
 
+export type AuthResponse = {
+  user_id: number;
+  auth_subject: string;
+  email: string;
+};
+
+export type RegisterRequest = {
+  email: string;
+  password: string;
+};
+
+export type LoginApiRequest = {
+  email: string;
+  password: string;
+};
+
+export type ForgotPasswordRequest = {
+  email: string;
+};
+
+export type ForgotPasswordResponse = {
+  message: string;
+  reset_token?: string;
+};
+
+export type ResetPasswordRequest = {
+  token: string;
+  new_password: string;
+};
+
 type RequestOptions = {
   method?: "GET" | "POST" | "PATCH";
   auth?: AuthContext;
@@ -172,6 +202,46 @@ async function requestJson<T>(url: string, options: RequestOptions = {}): Promis
 export function buildUrl(baseUrl: string, path: string): string {
   const normalizedBase = baseUrl.replace(/\/+$/, "");
   return `${normalizedBase}${path}`;
+}
+
+export async function apiForgotPassword(
+  payload: ForgotPasswordRequest,
+  baseUrl = defaultBaseUrl,
+): Promise<ForgotPasswordResponse> {
+  return requestJson<ForgotPasswordResponse>(buildUrl(baseUrl, "/v1/auth/forgot-password"), {
+    method: "POST",
+    body: payload,
+  });
+}
+
+export async function apiResetPassword(
+  payload: ResetPasswordRequest,
+  baseUrl = defaultBaseUrl,
+): Promise<{ message: string }> {
+  return requestJson<{ message: string }>(buildUrl(baseUrl, "/v1/auth/reset-password"), {
+    method: "POST",
+    body: payload,
+  });
+}
+
+export async function apiRegister(
+  payload: RegisterRequest,
+  baseUrl = defaultBaseUrl,
+): Promise<AuthResponse> {
+  return requestJson<AuthResponse>(buildUrl(baseUrl, "/v1/auth/register"), {
+    method: "POST",
+    body: payload,
+  });
+}
+
+export async function apiLogin(
+  payload: LoginApiRequest,
+  baseUrl = defaultBaseUrl,
+): Promise<AuthResponse> {
+  return requestJson<AuthResponse>(buildUrl(baseUrl, "/v1/auth/login"), {
+    method: "POST",
+    body: payload,
+  });
 }
 
 export function getHealth(baseUrl = defaultBaseUrl): Promise<HealthResponse> {

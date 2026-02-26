@@ -1,0 +1,236 @@
+---
+description: Frontend design system for LogLens using Tailwind CSS + shadcn/ui
+alwaysApply: true
+---
+
+# LogLens Frontend Design System
+
+## Stack
+
+| Layer | Tool | Purpose |
+|---|---|---|
+| Utility CSS | Tailwind CSS v4 | All layout, spacing, color, typography |
+| Components | shadcn/ui (Radix primitives) | Accessible, composable UI building blocks |
+| Theming | next-themes | System-aware dark/light mode with manual toggle |
+| Charts | Recharts | Data visualization (already installed) |
+| Virtualization | @tanstack/react-virtual | Large-list rendering (already installed) |
+
+## Brand Palette and Semantic Tokens
+
+LogLens brand colors (see `colors.md`) map to semantic CSS custom properties in HSL.
+
+### Color Reference
+
+| Name | Hex | HSL | Semantic Use |
+|---|---|---|---|
+| Flame Orange | #ff4f00 | 19 100% 50% | Primary accent, CTAs, active states, links |
+| Dust Grey | #c9c5ba | 44 12% 76% | Muted text, borders, secondary surfaces |
+| Muted Teal | #97b1a6 | 155 14% 64% | Success indicators, secondary accent |
+| Air Force Blue | #698996 | 197 18% 50% | Info states, metadata text, chart lines |
+| Stormy Teal | #407076 | 187 30% 36% | Dark accent, card headers, emphasis |
+
+### CSS Variable Mapping (globals.css)
+
+Follow shadcn/ui convention: variables store space-separated HSL channels (`H S% L%`) without the `hsl()` wrapper.
+
+```css
+:root {
+  --background: 0 0% 100%;
+  --foreground: 187 30% 15%;
+  --card: 0 0% 99%;
+  --card-foreground: 187 30% 15%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 187 30% 15%;
+  --primary: 19 100% 50%;          /* Flame Orange */
+  --primary-foreground: 0 0% 100%;
+  --secondary: 44 12% 92%;
+  --secondary-foreground: 187 30% 20%;
+  --muted: 44 8% 93%;
+  --muted-foreground: 197 18% 40%;  /* Air Force Blue shifted */
+  --accent: 187 30% 36%;            /* Stormy Teal */
+  --accent-foreground: 0 0% 100%;
+  --destructive: 0 84% 60%;
+  --destructive-foreground: 0 0% 100%;
+  --success: 155 14% 64%;           /* Muted Teal */
+  --success-foreground: 155 30% 15%;
+  --info: 197 18% 50%;              /* Air Force Blue */
+  --info-foreground: 0 0% 100%;
+  --border: 44 12% 86%;
+  --input: 44 12% 86%;
+  --ring: 19 100% 50%;              /* Flame Orange */
+  --radius: 0.5rem;
+}
+
+.dark {
+  --background: 200 10% 8%;
+  --foreground: 44 12% 86%;
+  --card: 200 10% 10%;
+  --card-foreground: 44 12% 86%;
+  --popover: 200 10% 10%;
+  --popover-foreground: 44 12% 86%;
+  --primary: 19 100% 50%;           /* Flame Orange stays vibrant */
+  --primary-foreground: 0 0% 100%;
+  --secondary: 200 10% 16%;
+  --secondary-foreground: 44 12% 76%;
+  --muted: 200 8% 16%;
+  --muted-foreground: 197 18% 60%;
+  --accent: 187 30% 36%;            /* Stormy Teal */
+  --accent-foreground: 44 12% 90%;
+  --destructive: 0 62% 50%;
+  --destructive-foreground: 0 0% 100%;
+  --success: 155 14% 50%;
+  --success-foreground: 155 30% 95%;
+  --info: 197 18% 55%;
+  --info-foreground: 0 0% 100%;
+  --border: 200 8% 20%;
+  --input: 200 8% 20%;
+  --ring: 19 100% 50%;
+}
+```
+
+### Chart Colors
+
+Define a reusable palette array for Recharts and other visualizations:
+
+```ts
+const CHART_COLORS = [
+  "hsl(var(--primary))",      // Flame Orange
+  "hsl(var(--accent))",       // Stormy Teal
+  "hsl(var(--info))",         // Air Force Blue
+  "hsl(var(--success))",      // Muted Teal
+  "hsl(var(--muted-foreground))", // Dust Grey range
+] as const;
+```
+
+## Theme Strategy
+
+- Use `next-themes` with `attribute="class"` and `defaultTheme="system"`.
+- Wrap the app in `<ThemeProvider>` inside `layout.tsx`.
+- Provide a toggle component (sun/moon icon) in the app header.
+- All color references use Tailwind classes that resolve through CSS variables; never hardcode hex values.
+- Recharts `stroke`/`fill` values use `hsl(var(--...))` so charts respond to theme changes.
+
+## UX Principles
+
+### Fewest Clicks to Value
+- The dashboard hero action is **Upload**; it should be visually dominant.
+- When a job completes, surface results immediately (auto-navigate or prominent link).
+- Default tab on job detail should be **Overview** (summary charts).
+
+### Progressive Disclosure
+- Show high-level summaries first; drill into details via tabs or expandable sections.
+- Log viewer loads a manageable page; infinite-scroll for more.
+- Filters collapse by default on mobile; expand on desktop.
+
+### Consistent Feedback
+- Use shadcn `Skeleton` for loading states.
+- Use shadcn `Badge` for status indicators (queued, running, done, failed).
+- Use shadcn `Sonner` (toast) for transient success/error messages.
+- Show progress indication during upload and parse.
+
+### Accessibility
+- All interactive elements must be keyboard-navigable.
+- Color is never the sole indicator; pair with icons or text.
+- Maintain WCAG AA contrast ratios (4.5:1 for normal text).
+- Use Radix primitives (via shadcn) for focus management and ARIA attributes.
+
+## Component Conventions
+
+### File Structure
+
+```
+apps/web/
+  components/
+    ui/           ← shadcn/ui primitives (Button, Card, Badge, etc.)
+    UploadPanel.tsx
+    LogViewer.tsx
+    GovernorLimitCharts.tsx
+    TimelineChart.tsx
+    HotspotsChart.tsx
+    ThemeToggle.tsx
+  lib/
+    utils.ts      ← cn() helper for class merging
+```
+
+### Styling Rules
+
+1. **No inline `style` props.** Use Tailwind utility classes for all styling.
+2. **Use `cn()` for conditional classes.** Import from `@/lib/utils`.
+3. **Prefer shadcn/ui components** (Button, Card, Tabs, Table, Badge, Dialog, Input, Select, Skeleton) over raw HTML elements.
+4. **Responsive-first.** Design for mobile, scale up with `sm:`, `md:`, `lg:` breakpoints.
+5. **Semantic color classes only.** Use `bg-primary`, `text-muted-foreground`, etc. Never use arbitrary hex values like `bg-[#ff4f00]`.
+
+### Component Patterns
+
+```tsx
+// Good: uses shadcn components, Tailwind classes, semantic colors
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { cn } from "@/lib/utils";
+
+function FeatureCard({ active }: { active: boolean }) {
+  return (
+    <Card className={cn("transition-colors", active && "border-primary")}>
+      <CardHeader>
+        <CardTitle className="text-foreground">Title</CardTitle>
+      </CardHeader>
+      <CardContent className="text-muted-foreground">
+        Content
+      </CardContent>
+    </Card>
+  );
+}
+```
+
+```tsx
+// Bad: inline styles, hardcoded colors, raw HTML
+function FeatureCard({ active }: { active: boolean }) {
+  return (
+    <div style={{
+      border: active ? "1px solid #ff4f00" : "1px solid #333",
+      backgroundColor: "#111",
+      padding: "1rem",
+    }}>
+      <h3 style={{ color: "#ccc" }}>Title</h3>
+      <p style={{ color: "#888" }}>Content</p>
+    </div>
+  );
+}
+```
+
+## Migration Guidance
+
+When modifying any existing component:
+
+1. Replace inline `style` props with equivalent Tailwind classes.
+2. Replace raw HTML elements (`<button>`, `<input>`, `<table>`) with their shadcn/ui equivalents.
+3. Replace hardcoded hex colors with semantic Tailwind classes (`text-primary`, `bg-card`, `border-border`, etc.).
+4. Add the `"use client"` directive only when the component needs interactivity; prefer server components.
+5. Do not rewrite components that are not being touched by the current task.
+
+## Dependencies to Install
+
+When setting up the design system for the first time:
+
+```bash
+# Tailwind CSS v4 for Next.js
+pnpm add tailwindcss @tailwindcss/postcss postcss
+
+# shadcn/ui CLI and peer deps
+pnpm dlx shadcn@latest init
+
+# Theme support
+pnpm add next-themes
+
+# Class merging utility (shadcn init may add this)
+pnpm add clsx tailwind-merge
+```
+
+## Recharts Theming
+
+Wrap Recharts components so they inherit the active theme:
+
+- Use `hsl(var(--primary))` for primary data series.
+- Use `hsl(var(--muted-foreground))` for axis labels and grid lines.
+- Use `hsl(var(--border))` for chart grid.
+- Tooltip background: `hsl(var(--popover))`, text: `hsl(var(--popover-foreground))`.

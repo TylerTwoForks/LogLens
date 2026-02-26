@@ -1,5 +1,3 @@
-import { redirect } from "next/navigation";
-import { getSession } from "../../lib/auth";
 import {
   Card,
   CardContent,
@@ -11,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
 
-type LoginPageProps = {
+type ResetPasswordPageProps = {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
 };
 
@@ -25,71 +23,69 @@ function pickFirst(
 }
 
 function errorMessage(
-  searchParams?: Record<string, string | string[] | undefined>
+  params?: Record<string, string | string[] | undefined>
 ): string | null {
-  const error = pickFirst(searchParams?.error);
+  const error = pickFirst(params?.error);
   switch (error) {
-    case "invalid_credentials":
-      return "Invalid email or password.";
     case "missing_fields":
-      return "Email and password are required.";
-    case "invalid_email":
-      return "Enter a valid email address.";
+      return "Token and new password are required.";
+    case "weak_password":
+      return "Password must be at least 8 characters.";
+    case "invalid_token":
+      return "Invalid or expired reset token.";
     default:
       return null;
   }
 }
 
-export default async function LoginPage({ searchParams }: LoginPageProps) {
-  const session = await getSession();
-  if (session) {
-    redirect("/app");
-  }
-
-  const resolvedParams = await searchParams;
-  const message = errorMessage(resolvedParams);
-  const resetSuccess = pickFirst(resolvedParams?.reset) === "success";
+export default async function ResetPasswordPage({
+  searchParams,
+}: ResetPasswordPageProps) {
+  const params = await searchParams;
+  const token = pickFirst(params?.token) ?? "";
+  const message = errorMessage(params);
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-background p-4">
       <Card className="w-full max-w-md">
         <CardHeader>
-          <CardTitle className="text-2xl">LogLens Sign In</CardTitle>
+          <CardTitle className="text-2xl">Set New Password</CardTitle>
           <CardDescription>
-            Sign in with your email and password.
+            Enter the reset token and your new password.
           </CardDescription>
         </CardHeader>
         <CardContent>
           <form
             method="post"
-            action="/api/auth/login"
+            action="/api/auth/reset-password"
             className="flex flex-col gap-4"
           >
             <div className="flex flex-col gap-2">
               <label
-                htmlFor="email"
+                htmlFor="token"
                 className="text-sm font-medium text-foreground"
               >
-                Email
+                Reset Token
               </label>
               <Input
-                id="email"
-                name="email"
-                type="email"
+                id="token"
+                name="token"
+                type="text"
                 required
-                placeholder="you@example.com"
+                defaultValue={token}
+                placeholder="Paste your reset token"
               />
             </div>
             <div className="flex flex-col gap-2">
               <label
-                htmlFor="password"
+                htmlFor="new_password"
                 className="text-sm font-medium text-foreground"
               >
-                Password
+                New Password
               </label>
               <Input
-                id="password"
-                name="password"
+                id="new_password"
+                name="new_password"
                 type="password"
                 required
                 placeholder="At least 8 characters"
@@ -97,29 +93,15 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
               />
             </div>
             <Button type="submit" className="w-full">
-              Sign in
+              Reset Password
             </Button>
-            <div className="text-right">
-              <Link
-                href="/forgot-password"
-                className="text-xs text-muted-foreground hover:text-primary"
-              >
-                Forgot password?
-              </Link>
-            </div>
           </form>
-          {resetSuccess && (
-            <p className="mt-4 text-sm text-green-600">
-              Password reset successful. Sign in with your new password.
-            </p>
-          )}
           {message && (
             <p className="mt-4 text-sm text-destructive">{message}</p>
           )}
           <p className="mt-4 text-center text-sm text-muted-foreground">
-            Don&apos;t have an account?{" "}
-            <Link href="/register" className="text-primary underline">
-              Register
+            <Link href="/login" className="text-primary underline">
+              Back to sign in
             </Link>
           </p>
         </CardContent>
